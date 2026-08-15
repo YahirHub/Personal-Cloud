@@ -12,8 +12,7 @@ Corregir dropdowns blancos/inconsistentes en modo oscuro y hacer el reproductor 
 - Se usa margen de seguridad de ancho de banda y un factor de penalización cuando aparecen eventos `waiting`/`stalled`.
 - Las variantes FFmpeg conservan CRF pero añaden `maxrate/bufsize` por perfil: 360p 900k, 480p 1600k, 720p 3200k y 1080p 5800k; esto hace predecible la heurística de Auto.
 - La caché de variantes sube a versión `v2` para no reutilizar MP4 antiguos generados sin esos límites.
-- Una variante automática se prepara en segundo plano y solo pausa al momento del swap; un cambio manual pausa inmediatamente.
-- El swap conserva tiempo, estado de reproducción, mute, volumen y velocidad y muestra loader local.
+- La primera implementación pausaba durante el swap y usaba loader. **Este comportamiento quedó sustituido por `contexto/13-cambio-calidad-sin-interrupcion.md`**: las variantes se precargan y se intercambian sin pausa visible ni loader.
 - La timeline se actualiza mediante `requestAnimationFrame`, no depende de `timeupdate`.
 
 # Arquitectura actual
@@ -35,7 +34,7 @@ Ninguna nueva. Biblioteca estándar Go + JavaScript/CSS local.
 El popup nativo del select no heredaba de forma fiable el tema oscuro en Windows. La línea de tiempo dependía de eventos multimedia de frecuencia variable y un control de rango con precisión limitada.
 
 # Soluciones implementadas
-Tema explícito para controles de selección, calidad Auto con medición real y fallback, loader durante swap y actualización por frame de la timeline.
+Tema explícito para controles de selección, calidad Auto con medición real y fallback y actualización por frame de la timeline. El swap con loader de esta primera iteración fue sustituido posteriormente por precarga transparente.
 
 # Pendientes
 SMB continúa como tarea separada.

@@ -275,7 +275,9 @@
   let qualityProfiles = [];
   let currentVideoQuality = 'original';
   let autoQualityEnabled = true;
-  let qualitySwitchLoading = false;
+  let qualitySwitchSequence = 0;
+  let pendingVideoQuality = '';
+  let initialVideoLoading = false;
   let autoQualityTimer = 0;
   let lastAutoQualitySwitch = 0;
   let measuredBandwidthMbps = 0;
@@ -440,6 +442,8 @@
   };
 
   const resetQualityControl = () => {
+    qualitySwitchSequence += 1;
+    pendingVideoQuality = '';
     qualityProfiles = [];
     currentVideoQuality = 'original';
     autoQualityEnabled = true;
@@ -453,74 +457,123 @@
       qualitySelect.onchange = null;
     }
   };
-  const replaceVideoSource = (video, url, previousTime, resumeAfter) => new Promise((resolve, reject) => {
+  const waitForMediaEvent = (media, events, timeoutMs = 20_000) => new Promise((resolve, reject) => {
     let settled = false;
+    const names = Array.isArray(events) ? events : [events];
     const cleanup = () => {
-      video.removeEventListener('loadedmetadata', onMetadata);
-      video.removeEventListener('canplay', onCanPlay);
-      video.removeEventListener('error', onError);
+      names.forEach((name) => media.removeEventListener(name, onReady));
+      media.removeEventListener('error', onError);
       window.clearTimeout(timeout);
     };
-    const finish = async () => {
+    const onReady = () => {
       if (settled) return;
       settled = true;
       cleanup();
-      applyVideoPreferences(video);
-      refreshVideoControls();
-      if (resumeAfter) { try { await video.play(); } catch (_) {} }
       resolve();
     };
-    const onMetadata = () => {
-      if (Number.isFinite(video.duration) && previousTime > 0) video.currentTime = Math.min(previousTime, Math.max(0, video.duration - .05));
-      if (video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) finish();
-    };
-    const onCanPlay = () => finish();
     const onError = () => {
       if (settled) return;
       settled = true;
       cleanup();
       reject(new Error('No se pudo cargar la resolución seleccionada.'));
     };
-    const timeout = window.setTimeout(onError, 20_000);
-    video.addEventListener('loadedmetadata', onMetadata);
-    video.addEventListener('canplay', onCanPlay);
-    video.addEventListener('error', onError);
-    video.src = url;
-    video.load();
+    const timeout = window.setTimeout(onError, timeoutMs);
+    names.forEach((name) => media.addEventListener(name, onReady, { once: true }));
+    media.addEventListener('error', onError, { once: true });
   });
-  const waitForVideoVariant = async (fileID, quality, token, showLoader = true) => {
-    while (viewer?.open && currentMediaID === token) {
+  const waitForVideoVariant = async (fileID, quality, token, requestID, mode) => {
+    while (viewer?.open && currentMediaID === token && requestID === qualitySwitchSequence) {
       await new Promise((resolve) => window.setTimeout(resolve, 850));
       const response = await fetch(`/api/video/${encodeURIComponent(fileID)}/estado?quality=${encodeURIComponent(quality)}`, { headers: { Accept: 'application/json' }, cache: 'no-store' });
       if (!response.ok) throw new Error((await response.text()).trim() || 'No se pudo consultar la conversión.');
       const state = await response.json();
       if (state.state === 'ready') return state;
       if (state.state === 'error') throw new Error(state.error || 'FFmpeg no pudo generar esta resolución.');
-      const label = state.state === 'queued' ? `Esperando turno para ${quality}p…` : `Preparando ${quality}p…`;
-      if (qualityStatus) qualityStatus.textContent = showLoader ? label : `Auto · ${label.toLowerCase()}`;
-      if (showLoader) showViewerLoader(label);
+      if (qualityStatus && requestID === qualitySwitchSequence) {
+        qualityStatus.textContent = mode === 'auto' ? `Auto · preparando ${quality}p…` : `${quality}p · preparando en segundo plano…`;
+      }
     }
     throw new Error('cancelado');
   };
-  const prepareVideoQuality = async (video, card, quality, mode = 'manual') => {
-    const token = card.dataset.mediaId || '';
-    if (!video || currentMediaID !== token || qualitySwitchLoading) return;
-    if (quality === currentVideoQuality) {
-      if (mode === 'auto' && qualityStatus) qualityStatus.textContent = quality === 'original' ? 'Auto · Original' : describeAutoQuality(quality);
+  const stageVideoSourceSwap = async (current, url, card, token, requestID) => {
+    if (!current || !stage || currentMediaID !== token || requestID !== qualitySwitchSequence) throw new Error('cancelado');
+    const resumeAfter = !current.paused && !current.ended;
+    const preferences = { muted: current.muted, volume: current.volume, playbackRate: current.playbackRate };
+    const staged = document.createElement('video');
+    staged.className = 'viewer-video viewer-video-staging';
+    staged.dataset.viewerVisual = '1';
+    staged.dataset.downloadFileId = token;
+    staged.controls = false;
+    staged.autoplay = false;
+    staged.playsInline = true;
+    staged.preload = 'auto';
+    staged.muted = true;
+    staged.volume = 0;
+    staged.playbackRate = preferences.playbackRate;
+    staged.src = url;
+    if (card?.dataset.thumbnail) staged.poster = card.dataset.thumbnail;
+    stage.append(staged);
+    const cleanupStaged = () => {
+      staged.pause();
+      staged.removeAttribute('src');
+      staged.load();
+      staged.remove();
+    };
+    try {
+      if (staged.readyState < HTMLMediaElement.HAVE_METADATA) await waitForMediaEvent(staged, 'loadedmetadata');
+      if (currentMediaID !== token || requestID !== qualitySwitchSequence || activeVideo !== current) throw new Error('cancelado');
+      const syncTime = Number.isFinite(current.currentTime) ? current.currentTime : 0;
+      if (syncTime > 0 && Number.isFinite(staged.duration)) {
+        const target = Math.min(syncTime, Math.max(0, staged.duration - .05));
+        if (Math.abs(staged.currentTime - target) > .08) {
+          staged.currentTime = target;
+          await waitForMediaEvent(staged, 'seeked');
+        }
+      }
+      if (staged.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) await waitForMediaEvent(staged, 'canplay');
+      if (currentMediaID !== token || requestID !== qualitySwitchSequence || activeVideo !== current) throw new Error('cancelado');
+      if (resumeAfter) {
+        // El video activo continúa reproduciéndose mientras la nueva calidad se prepara.
+        // La copia de staging arranca silenciada y fuera de vista para hacer el swap sin pausa visible.
+        const liveTime = Number.isFinite(current.currentTime) ? current.currentTime : syncTime;
+        if (Number.isFinite(staged.duration) && Math.abs(staged.currentTime - liveTime) > .35) {
+          staged.currentTime = Math.min(liveTime, Math.max(0, staged.duration - .05));
+          await waitForMediaEvent(staged, 'seeked');
+        }
+        await staged.play();
+      }
+      if (currentMediaID !== token || requestID !== qualitySwitchSequence || activeVideo !== current) throw new Error('cancelado');
+      current.pause();
+      current.remove();
+      staged.classList.remove('viewer-video-staging');
+      staged.muted = preferences.muted;
+      staged.volume = preferences.volume;
+      staged.playbackRate = preferences.playbackRate;
+      configureVideo(staged, { initial: initialVideoLoading });
+      if (!resumeAfter) staged.pause();
+      return staged;
+    } catch (error) {
+      cleanupStaged();
+      throw error;
+    }
+  };
+  const prepareVideoQuality = async (quality, mode = 'manual') => {
+    const video = activeVideo;
+    const card = activeVideoCard;
+    const token = card?.dataset.mediaId || '';
+    if (!video || !card || currentMediaID !== token) return;
+    if (quality === currentVideoQuality && !pendingVideoQuality) {
+      if (qualityStatus) qualityStatus.textContent = mode === 'auto'
+        ? (quality === 'original' ? 'Auto · Original' : describeAutoQuality(quality))
+        : (quality === 'original' ? 'Original' : `${quality}p`);
       return;
     }
-    qualitySwitchLoading = true;
-    if (qualitySelect) qualitySelect.disabled = true;
-    let resumeAfter = !video.paused && !video.ended;
-    let previousTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
-    const manualSwitch = mode !== 'auto';
-    const preparingLabel = quality === 'original' ? 'Cambiando a calidad original…' : `Preparando ${quality}p…`;
-    if (qualityStatus) qualityStatus.textContent = mode === 'auto' && quality !== 'original' ? `Auto · preparando ${quality}p en segundo plano…` : preparingLabel;
-    if (manualSwitch) {
-      stopVideoProgressLoop();
-      video.pause();
-      showViewerLoader(preparingLabel);
-    }
+    if (mode === 'auto' && pendingVideoQuality) return;
+    const requestID = ++qualitySwitchSequence;
+    pendingVideoQuality = quality;
+    if (qualityStatus) qualityStatus.textContent = quality === 'original'
+      ? (mode === 'auto' ? 'Auto · Original solicitada' : 'Original · solicitada')
+      : (mode === 'auto' ? `Auto · solicitando ${quality}p…` : `${quality}p · solicitada`);
     try {
       let url = card.dataset.original;
       if (quality !== 'original') {
@@ -532,35 +585,24 @@
         });
         if (!response.ok && response.status !== 202) throw new Error((await response.text()).trim() || 'No se pudo preparar el video.');
         let state = await response.json();
-        if (state.state !== 'ready') state = await waitForVideoVariant(token, quality, token, manualSwitch);
-        if (currentMediaID !== token || !viewer?.open) return;
+        if (state.state !== 'ready') state = await waitForVideoVariant(token, quality, token, requestID, mode);
+        if (currentMediaID !== token || requestID !== qualitySwitchSequence || !viewer?.open) return;
         url = state.url;
       }
-      if (!manualSwitch) {
-        resumeAfter = !video.paused && !video.ended;
-        previousTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
-        stopVideoProgressLoop();
-        video.pause();
-        showViewerLoader(quality === 'original' ? 'Aplicando calidad original…' : `Cambiando a ${quality}p…`);
-      }
-      await replaceVideoSource(video, url, previousTime, resumeAfter);
+      await stageVideoSourceSwap(video, url, card, token, requestID);
+      if (currentMediaID !== token || requestID !== qualitySwitchSequence) return;
       currentVideoQuality = quality;
-      lastAutoQualitySwitch = mode === 'auto' ? Date.now() : lastAutoQualitySwitch;
+      if (mode === 'auto') lastAutoQualitySwitch = Date.now();
       if (qualityStatus) qualityStatus.textContent = mode === 'auto'
         ? (quality === 'original' ? 'Auto · Original' : describeAutoQuality(quality))
-        : (quality === 'original' ? 'Original' : `${quality}p · caché local`);
+        : (quality === 'original' ? 'Original' : `${quality}p`);
     } catch (error) {
-      if (error.message !== 'cancelado') {
-        if (qualityStatus) qualityStatus.textContent = error.message || 'No se pudo cambiar la calidad.';
-        if (manualSwitch && resumeAfter && currentMediaID === token) { try { await video.play(); } catch (_) {} }
+      if (error.message !== 'cancelado' && requestID === qualitySwitchSequence && qualityStatus) {
+        qualityStatus.textContent = error.message || 'No se pudo cambiar la calidad.';
       }
     } finally {
-      if (currentMediaID === token && activeVideo === video) {
-        qualitySwitchLoading = false;
-        hideViewerLoader();
-        if (qualitySelect) qualitySelect.disabled = false;
-        refreshVideoControls();
-        if (!video.paused) startVideoProgressLoop();
+      if (requestID === qualitySwitchSequence) {
+        pendingVideoQuality = '';
         if (mode === 'auto') window.setTimeout(reevaluateAutoQuality, 8200);
       }
     }
@@ -568,35 +610,41 @@
   const reevaluateAutoQuality = () => {
     window.clearTimeout(autoQualityTimer);
     autoQualityTimer = window.setTimeout(() => {
-      if (!autoQualityEnabled || !activeVideo || !activeVideoCard || qualitySwitchLoading || !viewer?.open) return;
+      if (!autoQualityEnabled || !activeVideo || !activeVideoCard || pendingVideoQuality || !viewer?.open) return;
       const target = chooseAutoQuality();
       if (!target || target === currentVideoQuality) {
-        if (qualityStatus && target !== 'original') qualityStatus.textContent = describeAutoQuality(target);
+        if (qualityStatus) qualityStatus.textContent = target === 'original' ? 'Auto · Original' : describeAutoQuality(target);
         return;
       }
       if (Date.now() - lastAutoQualitySwitch < 8_000) return;
       if (qualitySelect) qualitySelect.value = 'auto';
-      prepareVideoQuality(activeVideo, activeVideoCard, target, 'auto');
+      prepareVideoQuality(target, 'auto');
     }, 180);
   };
-  const configureVideo = (video) => {
+  const configureVideo = (video, options = {}) => {
     activeVideo = video;
+    if (options.initial) initialVideoLoading = true;
     applyVideoPreferences(video);
     if (videoControls) videoControls.hidden = false;
     ['loadedmetadata', 'durationchange', 'seeking', 'seeked', 'ended', 'volumechange', 'ratechange'].forEach((type) => video.addEventListener(type, refreshVideoControls));
     video.addEventListener('play', () => { refreshVideoControls(); startVideoProgressLoop(); });
     video.addEventListener('pause', () => { stopVideoProgressLoop(); refreshVideoControls(); });
-    video.addEventListener('playing', () => { if (!qualitySwitchLoading) hideViewerLoader(); startVideoProgressLoop(); });
+    const finishInitialVideoLoad = () => {
+      if (activeVideo !== video || !initialVideoLoading) return;
+      initialVideoLoading = false;
+      hideViewerLoader();
+    };
+    video.addEventListener('canplay', finishInitialVideoLoad);
+    video.addEventListener('playing', () => { finishInitialVideoLoad(); startVideoProgressLoop(); });
     video.addEventListener('waiting', () => {
-      if (qualitySwitchLoading) return;
-      showViewerLoader('Cargando video…');
+      if (initialVideoLoading && activeVideo === video) showViewerLoader('Cargando video…');
       if (autoQualityEnabled) {
         adaptiveBandwidthFactor = Math.max(.42, adaptiveBandwidthFactor * .72);
         reevaluateAutoQuality();
       }
     });
     video.addEventListener('stalled', () => {
-      if (autoQualityEnabled && !qualitySwitchLoading) {
+      if (autoQualityEnabled) {
         adaptiveBandwidthFactor = Math.max(.42, adaptiveBandwidthFactor * .8);
         reevaluateAutoQuality();
       }
@@ -613,6 +661,8 @@
       } catch (_) {}
     });
     refreshVideoControls();
+    if (initialVideoLoading && video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) finishInitialVideoLoad();
+    if (!video.paused && !video.ended) startVideoProgressLoop();
   };
   videoPlayButton?.addEventListener('click', async () => {
     if (!activeVideo) return;
@@ -690,11 +740,13 @@
         if (selected === 'auto') {
           autoQualityEnabled = true;
           adaptiveBandwidthFactor = 1;
+          qualitySwitchSequence += 1;
+          pendingVideoQuality = '';
           reevaluateAutoQuality();
           return;
         }
         autoQualityEnabled = false;
-        prepareVideoQuality(video, card, selected, 'manual');
+        prepareVideoQuality(selected, 'manual');
       };
       const staleMeasurement = !measuredBandwidthAt || Date.now() - measuredBandwidthAt > 90_000;
       if (staleMeasurement) {
@@ -703,7 +755,7 @@
       }
       if (currentMediaID !== token || !autoQualityEnabled) return;
       const initialTarget = chooseAutoQuality();
-      if (initialTarget !== 'original') prepareVideoQuality(video, card, initialTarget, 'auto');
+      if (initialTarget !== 'original') prepareVideoQuality(initialTarget, 'auto');
       else qualityStatus.textContent = 'Auto · Original';
     } catch (_) {}
   };
@@ -726,7 +778,9 @@
     zoom = 1;
     stopVideoProgressLoop();
     videoScrubbing = false;
-    qualitySwitchLoading = false;
+    qualitySwitchSequence += 1;
+    pendingVideoQuality = '';
+    initialVideoLoading = false;
     hideViewerLoader();
     resetQualityControl();
     activeVideo = null;
@@ -773,7 +827,7 @@
       video.src = card.dataset.original;
       if (card.dataset.thumbnail) video.poster = card.dataset.thumbnail;
       showViewerLoader('Cargando video…');
-      configureVideo(video);
+      configureVideo(video, { initial: true });
       stage.append(video);
       setupVideoQualities(video, card);
     } else {
@@ -829,7 +883,9 @@
     zoom = 1;
     stopVideoProgressLoop();
     videoScrubbing = false;
-    qualitySwitchLoading = false;
+    qualitySwitchSequence += 1;
+    pendingVideoQuality = '';
+    initialVideoLoading = false;
     resetQualityControl();
     activeVideo = null;
     activeVideoCard = null;

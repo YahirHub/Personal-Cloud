@@ -173,11 +173,35 @@ func TestVideoPlayerUsesAdaptiveQualityAndSmoothTimeline(t *testing.T) {
 		"const chooseAutoQuality",
 		"new Option('Auto', 'auto')",
 		"Auto · midiendo ancho de banda",
-		"`Cambiando a ${quality}p…`",
+		"const stageVideoSourceSwap",
+		"viewer-video-staging",
+		"preparando en segundo plano",
 		"adaptiveBandwidthFactor",
 	} {
 		if !strings.Contains(js, expected) {
 			t.Fatalf("reproducción adaptativa/timeline incompleta; falta %q", expected)
+		}
+	}
+}
+
+func TestQualitySwitchDoesNotUseBlockingLoader(t *testing.T) {
+	data, err := fs.ReadFile(Assets, "static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	js := string(data)
+	start := strings.Index(js, "const prepareVideoQuality = async")
+	end := strings.Index(js[start:], "const reevaluateAutoQuality")
+	if start < 0 || end < 0 {
+		t.Fatal("no se encontró prepareVideoQuality")
+	}
+	block := js[start : start+end]
+	if strings.Contains(block, "showViewerLoader(") || strings.Contains(block, "video.pause()") {
+		t.Fatal("cambiar calidad debe prepararse en segundo plano sin pausar ni mostrar loader")
+	}
+	for _, expected := range []string{"stageVideoSourceSwap", "pendingVideoQuality", "qualitySwitchSequence"} {
+		if !strings.Contains(block, expected) {
+			t.Fatalf("cambio de calidad no bloqueante incompleto; falta %q", expected)
 		}
 	}
 }
@@ -190,7 +214,7 @@ func TestViewerIncludesLocalLoadingOverlay(t *testing.T) {
 	template := string(data)
 	for _, expected := range []string{"data-viewer-loader", "viewer-loading-spinner", "data-viewer-loading-text", `step="0.01"`} {
 		if !strings.Contains(template, expected) {
-			t.Fatalf("el visor debe mostrar loader local durante cambios de calidad; falta %q", expected)
+			t.Fatalf("el visor debe conservar loader local para la carga inicial; falta %q", expected)
 		}
 	}
 }

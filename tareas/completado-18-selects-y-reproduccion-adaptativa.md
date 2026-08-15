@@ -5,7 +5,7 @@
 - Evitar dropdowns nativos blancos/inconsistentes en modo oscuro.
 - Aplicar el estilo de selects de forma global.
 - Agregar calidad automática de video según ancho de banda y tamaño del visor.
-- Pausar, mostrar loader y reanudar al aplicar un cambio de resolución.
+- Implementar la primera iteración del cambio de calidad. **El comportamiento de pausa/loader fue sustituido por la tarea 19**, que hace el swap en segundo plano sin interrupción visible.
 - Hacer fluida la línea de tiempo del reproductor con actualización por frame.
 
 ## Estado
