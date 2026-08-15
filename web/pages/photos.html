@@ -29,9 +29,10 @@
   <div class="viewer-shell" data-viewer-shell>
     <div class="viewer-stage" data-viewer-stage></div>
     <button class="viewer-close icon-button" type="button" data-viewer-close aria-label="Cerrar">{{template "icon-close" .}}</button>
+    <div class="viewer-loading-overlay" data-viewer-loader hidden aria-live="polite" aria-busy="true"><span class="viewer-loading-spinner" aria-hidden="true"></span><strong data-viewer-loading-text>Cargando…</strong></div>
     <div class="viewer-video-controls" data-video-controls hidden>
       <div class="viewer-video-progress">
-        <input type="range" min="0" max="1000" value="0" step="1" data-video-progress aria-label="Posición del video">
+        <input type="range" min="0" max="1000" value="0" step="0.01" data-video-progress aria-label="Posición del video">
       </div>
       <div class="viewer-video-control-row">
         <button class="video-control-button" type="button" data-video-play aria-label="Reproducir" title="Reproducir">

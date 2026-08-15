@@ -266,6 +266,30 @@
   }
 
   const VIDEO_PREF_KEY = 'pc_video_preferences_v1';
+  const viewerLoader = $('[data-viewer-loader]', viewer);
+  const viewerLoadingText = $('[data-viewer-loading-text]', viewer);
+  const connectionInfo = navigator.connection || navigator.mozConnection || navigator.webkitConnection || null;
+  let videoProgressFrame = 0;
+  let videoScrubbing = false;
+  let activeVideoCard = null;
+  let qualityProfiles = [];
+  let currentVideoQuality = 'original';
+  let autoQualityEnabled = true;
+  let qualitySwitchLoading = false;
+  let autoQualityTimer = 0;
+  let lastAutoQualitySwitch = 0;
+  let measuredBandwidthMbps = 0;
+  let measuredBandwidthAt = 0;
+  let adaptiveBandwidthFactor = 1;
+
+  const showViewerLoader = (label = 'Cargando…') => {
+    if (!viewerLoader) return;
+    if (viewerLoadingText) viewerLoadingText.textContent = label;
+    viewerLoader.hidden = false;
+  };
+  const hideViewerLoader = () => {
+    if (viewerLoader) viewerLoader.hidden = true;
+  };
   const readVideoPreferences = () => {
     try {
       const stored = JSON.parse(localStorage.getItem(VIDEO_PREF_KEY) || '{}');
@@ -296,6 +320,32 @@
     const secs = String(total % 60).padStart(2, '0');
     return hours ? `${hours}:${String(minutes).padStart(2, '0')}:${secs}` : `${minutes}:${secs}`;
   };
+  const refreshVideoTimeline = () => {
+    const video = activeVideo;
+    if (!video) return;
+    if (videoCurrent) videoCurrent.textContent = formatMediaTime(video.currentTime);
+    if (videoDuration) videoDuration.textContent = formatMediaTime(video.duration);
+    if (videoProgress && !videoScrubbing) {
+      const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+      videoProgress.value = duration ? String((video.currentTime / duration) * 1000) : '0';
+      videoProgress.disabled = !duration;
+    }
+  };
+  const stopVideoProgressLoop = () => {
+    if (videoProgressFrame) cancelAnimationFrame(videoProgressFrame);
+    videoProgressFrame = 0;
+  };
+  const videoProgressLoop = () => {
+    videoProgressFrame = 0;
+    if (!activeVideo || activeVideo.paused || activeVideo.ended) return;
+    refreshVideoTimeline();
+    videoProgressFrame = requestAnimationFrame(videoProgressLoop);
+  };
+  const startVideoProgressLoop = () => {
+    stopVideoProgressLoop();
+    refreshVideoTimeline();
+    videoProgressFrame = requestAnimationFrame(videoProgressLoop);
+  };
   const refreshVideoControls = () => {
     const video = activeVideo;
     if (!video) return;
@@ -306,13 +356,7 @@
       videoPlayButton.title = playing ? 'Pausar' : 'Reproducir';
       videoPlayButton.setAttribute('aria-label', playing ? 'Pausar' : 'Reproducir');
     }
-    if (videoCurrent) videoCurrent.textContent = formatMediaTime(video.currentTime);
-    if (videoDuration) videoDuration.textContent = formatMediaTime(video.duration);
-    if (videoProgress) {
-      const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
-      videoProgress.value = duration ? String(Math.round((video.currentTime / duration) * 1000)) : '0';
-      videoProgress.disabled = !duration;
-    }
+    refreshVideoTimeline();
     if (videoVolume) videoVolume.value = String(video.muted ? 0 : video.volume);
     if (videoSpeed) videoSpeed.value = String(video.playbackRate);
     if (videoMuteButton) {
@@ -322,11 +366,241 @@
       videoMuteButton.classList.toggle('is-muted', muted);
     }
   };
+
+  const numericProfiles = () => qualityProfiles
+    .filter((profile) => /^\d+$/.test(profile.id || ''))
+    .sort((a, b) => Number(a.id) - Number(b.id));
+  const browserBandwidthMbps = () => {
+    const downlink = Number(connectionInfo?.downlink);
+    if (Number.isFinite(downlink) && downlink > 0) return downlink;
+    switch (connectionInfo?.effectiveType) {
+      case 'slow-2g': return .12;
+      case '2g': return .35;
+      case '3g': return 1.4;
+      case '4g': return 8;
+      default: return 0;
+    }
+  };
+  const effectiveBandwidthMbps = () => {
+    const measuredFresh = measuredBandwidthMbps > 0 && (Date.now() - measuredBandwidthAt) < 90_000;
+    const base = measuredFresh ? measuredBandwidthMbps : browserBandwidthMbps();
+    return base > 0 ? base * adaptiveBandwidthFactor : 0;
+  };
+  const qualityBudgetMbps = { 360: .9, 480: 1.6, 720: 3.2, 1080: 5.8 };
+  const chooseAutoQuality = () => {
+    const profiles = numericProfiles();
+    if (!profiles.length) return 'original';
+    const bandwidth = effectiveBandwidthMbps();
+    const stageHeight = Math.max(240, stage?.clientHeight || window.innerHeight || 720);
+    const pixelRatio = Math.min(1.5, Math.max(1, window.devicePixelRatio || 1));
+    const displayCap = stageHeight * pixelRatio * 1.15;
+    let candidates = profiles.filter((profile) => Number(profile.id) <= displayCap);
+    if (!candidates.length) candidates = [profiles[0]];
+    if (bandwidth > 0) {
+      const safeBudget = bandwidth * .68;
+      const networkCandidates = candidates.filter((profile) => (qualityBudgetMbps[Number(profile.id)] || Infinity) <= safeBudget);
+      if (networkCandidates.length) candidates = networkCandidates;
+      else return profiles[0].id;
+    } else {
+      const fallback = candidates.filter((profile) => Number(profile.id) <= 720);
+      if (fallback.length) candidates = fallback;
+    }
+    return candidates[candidates.length - 1]?.id || 'original';
+  };
+  const describeAutoQuality = (quality) => {
+    const bandwidth = effectiveBandwidthMbps();
+    return bandwidth > 0 ? `Auto · ${quality}p · ~${bandwidth.toFixed(1)} Mbps` : `Auto · ${quality}p`;
+  };
+  const measureVideoBandwidth = async (card, token) => {
+    if (!card?.dataset.original || !viewer?.open || currentMediaID !== token) return;
+    try {
+      const controller = new AbortController();
+      const started = performance.now();
+      const response = await fetch(card.dataset.original, {
+        headers: { Range: 'bytes=0-524287' },
+        cache: 'no-store',
+        signal: controller.signal
+      });
+      if (!response.ok || !response.body) return;
+      const reader = response.body.getReader();
+      let received = 0;
+      while (received < 524288) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        received += value?.byteLength || 0;
+      }
+      await reader.cancel().catch(() => {});
+      controller.abort();
+      const seconds = Math.max(.03, (performance.now() - started) / 1000);
+      if (received >= 64 * 1024) {
+        measuredBandwidthMbps = Math.min(1000, (received * 8) / seconds / 1_000_000);
+        measuredBandwidthAt = Date.now();
+      }
+    } catch (_) {}
+  };
+
+  const resetQualityControl = () => {
+    qualityProfiles = [];
+    currentVideoQuality = 'original';
+    autoQualityEnabled = true;
+    adaptiveBandwidthFactor = 1;
+    if (qualityControl) qualityControl.hidden = true;
+    if (qualityStatus) qualityStatus.textContent = '';
+    if (qualitySelect) {
+      qualitySelect.disabled = false;
+      qualitySelect.replaceChildren(new Option('Original', 'original'));
+      qualitySelect.value = 'original';
+      qualitySelect.onchange = null;
+    }
+  };
+  const replaceVideoSource = (video, url, previousTime, resumeAfter) => new Promise((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => {
+      video.removeEventListener('loadedmetadata', onMetadata);
+      video.removeEventListener('canplay', onCanPlay);
+      video.removeEventListener('error', onError);
+      window.clearTimeout(timeout);
+    };
+    const finish = async () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      applyVideoPreferences(video);
+      refreshVideoControls();
+      if (resumeAfter) { try { await video.play(); } catch (_) {} }
+      resolve();
+    };
+    const onMetadata = () => {
+      if (Number.isFinite(video.duration) && previousTime > 0) video.currentTime = Math.min(previousTime, Math.max(0, video.duration - .05));
+      if (video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) finish();
+    };
+    const onCanPlay = () => finish();
+    const onError = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error('No se pudo cargar la resolución seleccionada.'));
+    };
+    const timeout = window.setTimeout(onError, 20_000);
+    video.addEventListener('loadedmetadata', onMetadata);
+    video.addEventListener('canplay', onCanPlay);
+    video.addEventListener('error', onError);
+    video.src = url;
+    video.load();
+  });
+  const waitForVideoVariant = async (fileID, quality, token, showLoader = true) => {
+    while (viewer?.open && currentMediaID === token) {
+      await new Promise((resolve) => window.setTimeout(resolve, 850));
+      const response = await fetch(`/api/video/${encodeURIComponent(fileID)}/estado?quality=${encodeURIComponent(quality)}`, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+      if (!response.ok) throw new Error((await response.text()).trim() || 'No se pudo consultar la conversión.');
+      const state = await response.json();
+      if (state.state === 'ready') return state;
+      if (state.state === 'error') throw new Error(state.error || 'FFmpeg no pudo generar esta resolución.');
+      const label = state.state === 'queued' ? `Esperando turno para ${quality}p…` : `Preparando ${quality}p…`;
+      if (qualityStatus) qualityStatus.textContent = showLoader ? label : `Auto · ${label.toLowerCase()}`;
+      if (showLoader) showViewerLoader(label);
+    }
+    throw new Error('cancelado');
+  };
+  const prepareVideoQuality = async (video, card, quality, mode = 'manual') => {
+    const token = card.dataset.mediaId || '';
+    if (!video || currentMediaID !== token || qualitySwitchLoading) return;
+    if (quality === currentVideoQuality) {
+      if (mode === 'auto' && qualityStatus) qualityStatus.textContent = quality === 'original' ? 'Auto · Original' : describeAutoQuality(quality);
+      return;
+    }
+    qualitySwitchLoading = true;
+    if (qualitySelect) qualitySelect.disabled = true;
+    let resumeAfter = !video.paused && !video.ended;
+    let previousTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+    const manualSwitch = mode !== 'auto';
+    const preparingLabel = quality === 'original' ? 'Cambiando a calidad original…' : `Preparando ${quality}p…`;
+    if (qualityStatus) qualityStatus.textContent = mode === 'auto' && quality !== 'original' ? `Auto · preparando ${quality}p en segundo plano…` : preparingLabel;
+    if (manualSwitch) {
+      stopVideoProgressLoop();
+      video.pause();
+      showViewerLoader(preparingLabel);
+    }
+    try {
+      let url = card.dataset.original;
+      if (quality !== 'original') {
+        const response = await fetch(`/api/video/${encodeURIComponent(token)}/preparar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', Accept: 'application/json' },
+          body: new URLSearchParams({ csrf_token: csrfToken, quality }),
+          cache: 'no-store'
+        });
+        if (!response.ok && response.status !== 202) throw new Error((await response.text()).trim() || 'No se pudo preparar el video.');
+        let state = await response.json();
+        if (state.state !== 'ready') state = await waitForVideoVariant(token, quality, token, manualSwitch);
+        if (currentMediaID !== token || !viewer?.open) return;
+        url = state.url;
+      }
+      if (!manualSwitch) {
+        resumeAfter = !video.paused && !video.ended;
+        previousTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+        stopVideoProgressLoop();
+        video.pause();
+        showViewerLoader(quality === 'original' ? 'Aplicando calidad original…' : `Cambiando a ${quality}p…`);
+      }
+      await replaceVideoSource(video, url, previousTime, resumeAfter);
+      currentVideoQuality = quality;
+      lastAutoQualitySwitch = mode === 'auto' ? Date.now() : lastAutoQualitySwitch;
+      if (qualityStatus) qualityStatus.textContent = mode === 'auto'
+        ? (quality === 'original' ? 'Auto · Original' : describeAutoQuality(quality))
+        : (quality === 'original' ? 'Original' : `${quality}p · caché local`);
+    } catch (error) {
+      if (error.message !== 'cancelado') {
+        if (qualityStatus) qualityStatus.textContent = error.message || 'No se pudo cambiar la calidad.';
+        if (manualSwitch && resumeAfter && currentMediaID === token) { try { await video.play(); } catch (_) {} }
+      }
+    } finally {
+      if (currentMediaID === token && activeVideo === video) {
+        qualitySwitchLoading = false;
+        hideViewerLoader();
+        if (qualitySelect) qualitySelect.disabled = false;
+        refreshVideoControls();
+        if (!video.paused) startVideoProgressLoop();
+        if (mode === 'auto') window.setTimeout(reevaluateAutoQuality, 8200);
+      }
+    }
+  };
+  const reevaluateAutoQuality = () => {
+    window.clearTimeout(autoQualityTimer);
+    autoQualityTimer = window.setTimeout(() => {
+      if (!autoQualityEnabled || !activeVideo || !activeVideoCard || qualitySwitchLoading || !viewer?.open) return;
+      const target = chooseAutoQuality();
+      if (!target || target === currentVideoQuality) {
+        if (qualityStatus && target !== 'original') qualityStatus.textContent = describeAutoQuality(target);
+        return;
+      }
+      if (Date.now() - lastAutoQualitySwitch < 8_000) return;
+      if (qualitySelect) qualitySelect.value = 'auto';
+      prepareVideoQuality(activeVideo, activeVideoCard, target, 'auto');
+    }, 180);
+  };
   const configureVideo = (video) => {
     activeVideo = video;
     applyVideoPreferences(video);
     if (videoControls) videoControls.hidden = false;
-    ['loadedmetadata', 'durationchange', 'timeupdate', 'play', 'pause', 'ended', 'volumechange', 'ratechange'].forEach((type) => video.addEventListener(type, refreshVideoControls));
+    ['loadedmetadata', 'durationchange', 'seeking', 'seeked', 'ended', 'volumechange', 'ratechange'].forEach((type) => video.addEventListener(type, refreshVideoControls));
+    video.addEventListener('play', () => { refreshVideoControls(); startVideoProgressLoop(); });
+    video.addEventListener('pause', () => { stopVideoProgressLoop(); refreshVideoControls(); });
+    video.addEventListener('playing', () => { if (!qualitySwitchLoading) hideViewerLoader(); startVideoProgressLoop(); });
+    video.addEventListener('waiting', () => {
+      if (qualitySwitchLoading) return;
+      showViewerLoader('Cargando video…');
+      if (autoQualityEnabled) {
+        adaptiveBandwidthFactor = Math.max(.42, adaptiveBandwidthFactor * .72);
+        reevaluateAutoQuality();
+      }
+    });
+    video.addEventListener('stalled', () => {
+      if (autoQualityEnabled && !qualitySwitchLoading) {
+        adaptiveBandwidthFactor = Math.max(.42, adaptiveBandwidthFactor * .8);
+        reevaluateAutoQuality();
+      }
+    });
     video.addEventListener('volumechange', () => saveVideoPreferences(video));
     video.addEventListener('ratechange', () => saveVideoPreferences(video));
     video.addEventListener('click', async () => {
@@ -344,10 +618,13 @@
     if (!activeVideo) return;
     if (activeVideo.paused) { try { await activeVideo.play(); } catch (_) {} } else activeVideo.pause();
   });
+  videoProgress?.addEventListener('pointerdown', () => { videoScrubbing = true; });
+  videoProgress?.addEventListener('pointerup', () => { videoScrubbing = false; refreshVideoTimeline(); });
+  videoProgress?.addEventListener('change', () => { videoScrubbing = false; refreshVideoTimeline(); });
   videoProgress?.addEventListener('input', () => {
     if (!activeVideo || !Number.isFinite(activeVideo.duration) || activeVideo.duration <= 0) return;
     activeVideo.currentTime = (Number(videoProgress.value) / 1000) * activeVideo.duration;
-    refreshVideoControls();
+    if (videoCurrent) videoCurrent.textContent = formatMediaTime(activeVideo.currentTime);
   });
   videoMuteButton?.addEventListener('click', () => {
     if (!activeVideo) return;
@@ -386,104 +663,58 @@
     else await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; });
     return image;
   };
-  const resetQualityControl = () => {
-    if (qualityControl) qualityControl.hidden = true;
-    if (qualityStatus) qualityStatus.textContent = '';
-    if (qualitySelect) {
-      qualitySelect.disabled = false;
-      qualitySelect.replaceChildren(new Option('Original', 'original'));
-      qualitySelect.value = 'original';
-      qualitySelect.onchange = null;
-    }
-  };
-  const replaceVideoSource = (video, url) => new Promise((resolve, reject) => {
-    const previousTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
-    const wasPaused = video.paused;
-    const onReady = async () => {
-      video.removeEventListener('loadedmetadata', onReady);
-      video.removeEventListener('error', onError);
-      if (Number.isFinite(video.duration) && previousTime > 0) video.currentTime = Math.min(previousTime, Math.max(0, video.duration - .05));
-      applyVideoPreferences(video);
-      if (!wasPaused) { try { await video.play(); } catch (_) {} }
-      resolve();
-    };
-    const onError = () => {
-      video.removeEventListener('loadedmetadata', onReady);
-      video.removeEventListener('error', onError);
-      reject(new Error('No se pudo cargar la resolución seleccionada.'));
-    };
-    video.addEventListener('loadedmetadata', onReady);
-    video.addEventListener('error', onError);
-    video.src = url;
-    video.load();
-  });
-  const waitForVideoVariant = async (fileID, quality, token) => {
-    while (viewer?.open && currentMediaID === token) {
-      await new Promise((resolve) => window.setTimeout(resolve, 850));
-      const response = await fetch(`/api/video/${encodeURIComponent(fileID)}/estado?quality=${encodeURIComponent(quality)}`, { headers: { Accept: 'application/json' }, cache: 'no-store' });
-      if (!response.ok) throw new Error((await response.text()).trim() || 'No se pudo consultar la conversión.');
-      const state = await response.json();
-      if (state.state === 'ready') return state;
-      if (state.state === 'error') throw new Error(state.error || 'FFmpeg no pudo generar esta resolución.');
-      if (qualityStatus) qualityStatus.textContent = state.state === 'queued' ? `Esperando turno para ${quality}p…` : `Preparando ${quality}p…`;
-    }
-    throw new Error('cancelado');
-  };
-  const prepareVideoQuality = async (video, card, quality) => {
-    const token = card.dataset.mediaId || '';
-    if (quality === 'original') {
-      if (qualityStatus) qualityStatus.textContent = 'Original';
-      await replaceVideoSource(video, card.dataset.original);
-      return;
-    }
-    if (qualitySelect) qualitySelect.disabled = true;
-    if (qualityStatus) qualityStatus.textContent = `Preparando ${quality}p…`;
-    try {
-      const response = await fetch(`/api/video/${encodeURIComponent(token)}/preparar`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', Accept: 'application/json' },
-        body: new URLSearchParams({ csrf_token: csrfToken, quality }),
-        cache: 'no-store'
-      });
-      if (!response.ok && response.status !== 202) throw new Error((await response.text()).trim() || 'No se pudo preparar el video.');
-      let state = await response.json();
-      if (state.state !== 'ready') state = await waitForVideoVariant(token, quality, token);
-      if (currentMediaID !== token || !viewer?.open) return;
-      await replaceVideoSource(video, state.url);
-      if (qualityStatus) qualityStatus.textContent = `${quality}p · caché local`;
-    } catch (error) {
-      if (error.message !== 'cancelado') {
-        if (qualityStatus) qualityStatus.textContent = error.message || 'No se pudo cambiar la calidad.';
-        if (qualitySelect) qualitySelect.value = 'original';
-      }
-    } finally {
-      if (qualitySelect && currentMediaID === token) qualitySelect.disabled = false;
-    }
-  };
   const setupVideoQualities = async (video, card) => {
     resetQualityControl();
+    activeVideoCard = card;
     const token = card.dataset.mediaId || '';
     try {
       const response = await fetch(`/api/video/${encodeURIComponent(token)}/calidades`, { headers: { Accept: 'application/json' }, cache: 'no-store' });
       if (!response.ok || currentMediaID !== token) return;
       const data = await response.json();
       if (!data.ffmpeg || !Array.isArray(data.profiles) || data.profiles.length <= 1) return;
-      qualitySelect.replaceChildren();
+      qualityProfiles = data.profiles;
+      qualitySelect.replaceChildren(new Option('Auto', 'auto'));
       data.profiles.forEach((profile) => {
         const option = new Option(profile.label, profile.id);
         if (profile.state === 'ready' && profile.id !== 'original') option.textContent += ' · lista';
         qualitySelect.append(option);
       });
-      qualitySelect.value = 'original';
+      qualitySelect.value = 'auto';
       qualityControl.hidden = false;
-      qualityStatus.textContent = 'FFmpeg disponible';
+      autoQualityEnabled = true;
+      currentVideoQuality = 'original';
+      qualityStatus.textContent = 'Auto · evaluando red…';
       qualitySelect.onchange = () => {
         const selected = qualitySelect.value;
         qualitySelect.blur();
-        prepareVideoQuality(video, card, selected);
+        if (selected === 'auto') {
+          autoQualityEnabled = true;
+          adaptiveBandwidthFactor = 1;
+          reevaluateAutoQuality();
+          return;
+        }
+        autoQualityEnabled = false;
+        prepareVideoQuality(video, card, selected, 'manual');
       };
+      const staleMeasurement = !measuredBandwidthAt || Date.now() - measuredBandwidthAt > 90_000;
+      if (staleMeasurement) {
+        qualityStatus.textContent = 'Auto · midiendo ancho de banda…';
+        await measureVideoBandwidth(card, token);
+      }
+      if (currentMediaID !== token || !autoQualityEnabled) return;
+      const initialTarget = chooseAutoQuality();
+      if (initialTarget !== 'original') prepareVideoQuality(video, card, initialTarget, 'auto');
+      else qualityStatus.textContent = 'Auto · Original';
     } catch (_) {}
   };
+
+  connectionInfo?.addEventListener?.('change', () => {
+    measuredBandwidthAt = 0;
+    adaptiveBandwidthFactor = 1;
+    reevaluateAutoQuality();
+  });
+  window.addEventListener('resize', () => reevaluateAutoQuality());
+  document.addEventListener('fullscreenchange', () => reevaluateAutoQuality());
 
   const showMedia = async (index) => {
     const cards = mediaCards();
@@ -493,15 +724,20 @@
     $$('video,audio', stage).forEach((media) => media.pause());
     currentMediaID = card.dataset.mediaId || '';
     zoom = 1;
+    stopVideoProgressLoop();
+    videoScrubbing = false;
+    qualitySwitchLoading = false;
+    hideViewerLoader();
     resetQualityControl();
     activeVideo = null;
+    activeVideoCard = null;
     if (videoControls) videoControls.hidden = true;
     viewerShell.dataset.activeKind = card.dataset.kind || '';
     $('[data-viewer-title]', viewer).textContent = card.dataset.name || '';
 
     if (card.dataset.kind === 'image') {
       const token = currentMediaID;
-      viewerShell.classList.add('is-media-loading');
+      showViewerLoader('Cargando imagen…');
       if (!viewer.open) viewer.showModal();
       try {
         const cacheIsOriented = Number(card.dataset.cacheVersion || 0) >= 2;
@@ -522,7 +758,7 @@
       } catch (_) {
         if (currentMediaID === token) stage.replaceChildren();
       } finally {
-        if (currentMediaID === token) viewerShell.classList.remove('is-media-loading');
+        if (currentMediaID === token) hideViewerLoader();
       }
     } else if (card.dataset.kind === 'video') {
       stage.replaceChildren();
@@ -536,6 +772,7 @@
       video.preload = 'metadata';
       video.src = card.dataset.original;
       if (card.dataset.thumbnail) video.poster = card.dataset.thumbnail;
+      showViewerLoader('Cargando video…');
       configureVideo(video);
       stage.append(video);
       setupVideoQualities(video, card);
@@ -590,10 +827,14 @@
     currentIndex = -1;
     currentMediaID = '';
     zoom = 1;
+    stopVideoProgressLoop();
+    videoScrubbing = false;
+    qualitySwitchLoading = false;
     resetQualityControl();
     activeVideo = null;
+    activeVideoCard = null;
     if (videoControls) videoControls.hidden = true;
-    viewerShell?.classList.remove('is-media-loading');
+    hideViewerLoader();
     if (viewerShell) viewerShell.dataset.activeKind = '';
   });
   viewer?.addEventListener('click', (event) => { if (event.target === viewer) viewer.close(); });

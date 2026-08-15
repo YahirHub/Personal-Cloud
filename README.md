@@ -27,7 +27,7 @@ Implementado:
 - Filtro compacto por imágenes/video/audio y orden por fecha de archivo, fecha de incorporación o nombre.
 - Visor offline de imagen/video/audio centrado a viewport completo, con navegación ←/→ o A/D, zoom suave W/S y reproductor de video con controles inferiores propios (play, seek, volumen, velocidad, calidad y fullscreen).
 - Preferencias locales persistentes del reproductor de video: mute, volumen y velocidad.
-- Calidad de video seleccionable Original/360p/480p/720p/1080p cuando FFmpeg + libx264 están disponibles; las variantes se generan bajo demanda y se cachean localmente.
+- Calidad de video **Auto**/Original/360p/480p/720p/1080p cuando FFmpeg + libx264 están disponibles; Auto mide una muestra de la ruta real, considera el tamaño del visor y aplica margen de seguridad para elegir resolución. Las variantes se generan bajo demanda y se cachean localmente.
 - Descarga por clic derecho mediante ticket AES-GCM opaco, ligado al usuario y de vida corta; las URLs no revelan ruta, storage ID ni nombre del archivo.
 - Scroll infinito por defecto o paginación persistente mediante un componente de listado reutilizable.
 - Menú `⋯` reutilizable en Galería/Archivos con **Seleccionar** y **Seleccionar todo**; la selección total carga elementos del modo continuo hasta el límite seguro de 500 por operación.
@@ -282,8 +282,8 @@ Controles del visor:
 - `←` / `→` o `A` / `D`: medio anterior/siguiente;
 - `W` / `S`: zoom suave de la imagen/video visible;
 - `Esc`: cerrar;
-- video y audio usan los controles HTML5 nativos; el visor añade un botón de pantalla completa para video;
-- título y ayuda se muestran en una franja superior superpuesta, dejando siempre libre la zona inferior de controles nativos del video;
+- video usa controles locales propios (play, timeline, volumen, velocidad, Auto/calidad y fullscreen) y audio conserva controles HTML5;
+- título y ayuda se muestran en una franja superior superpuesta, dejando siempre libre la zona inferior del reproductor;
 - mute, volumen y velocidad de video se guardan en el navegador y se restauran al cambiar de video o recargar.
 - clic derecho sobre un medio permite solicitar una descarga segura mediante ticket opaco.
 
@@ -296,7 +296,7 @@ FFmpeg es **opcional** y se detecta automáticamente en `PATH`. Cuando existe, P
 - extraer la carátula embebida de audio cuando exista;
 - preparar variantes MP4 360p/480p/720p/1080p bajo demanda si el ejecutable ofrece `libx264`.
 
-El reproductor siempre comienza con el original. Al elegir otra calidad, el original continúa disponible mientras FFmpeg crea una única variante en segundo plano; al terminar, el navegador cambia de fuente conservando posición, mute, volumen y velocidad. Las variantes se guardan en `data/cache/video-variants/`, usan MP4 con `faststart`, se sirven mediante rangos HTTP y se eliminan por antigüedad (72 h). Solo se ejecuta una transcodificación a la vez para limitar CPU/RAM del MiniPC. Si `ffprobe` está disponible, se usa para conocer resolución/rotación y no ofrecer calidades mayores que la fuente.
+El reproductor comienza en modo **Auto** cuando FFmpeg permite variantes. Personal Cloud mide aproximadamente 512 KiB sobre la misma ruta HTTP que usa el navegador (por lo que el proxy forma parte de la medición), combina ese resultado con el tamaño/pixel ratio del visor y elige una resolución con margen de seguridad. Si el navegador reporta buffering, reduce temporalmente el presupuesto de red. En cambios automáticos la variante puede prepararse en segundo plano y el video solo se pausa al aplicar la fuente; en cambios manuales se pausa inmediatamente. Durante el swap aparece un loader local y luego se reanuda en el mismo segundo conservando mute, volumen y velocidad. La timeline se actualiza con `requestAnimationFrame` y un rango de alta precisión, no con la frecuencia limitada de `timeupdate`. Las variantes se guardan en `data/cache/video-variants/`, usan MP4 con `faststart`, se sirven mediante rangos HTTP y se eliminan por antigüedad (72 h). Para que Auto pueda razonar con presupuestos previsibles, FFmpeg mantiene CRF y además limita picos con `maxrate/bufsize`: 360p≈900k, 480p≈1600k, 720p≈3200k y 1080p≈5800k de video. La caché de variantes está versionada, por lo que R15 no reutiliza archivos anteriores generados sin esos límites. Solo se ejecuta una transcodificación a la vez para limitar CPU/RAM del MiniPC. Si `ffprobe` está disponible, se usa para conocer resolución/rotación y no ofrecer calidades mayores que la fuente.
 
 Sin FFmpeg el servidor sigue funcionando y reproduce el original normalmente; únicamente faltan las miniaturas/formats adicionales y el selector multiresolución. FFmpeg es un ejecutable externo opcional: no se enlaza con CGO ni forma parte del binario Go, que sigue compilando estáticamente.
 
@@ -546,7 +546,7 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o b
 
 ### Núcleo
 
-1. Conserva tu `data/` actual y arranca R7; el estado existente se mantiene compatible.
+1. Conserva tu `data/` actual y arranca la versión nueva; el estado existente se mantiene compatible.
 2. Confirma que tu cuenta y onboarding siguen presentes.
 3. Comprueba `/inicio`, `/almacenamiento`, `/galeria`, `/archivos` y `/salud`.
 

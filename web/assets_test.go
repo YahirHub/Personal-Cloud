@@ -143,3 +143,54 @@ func TestCustomVideoPlayerUsesLocalControls(t *testing.T) {
 		}
 	}
 }
+
+func TestSelectsUsePersistentThemeColors(t *testing.T) {
+	data, err := fs.ReadFile(Assets, "static/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	css := string(data)
+	for _, expected := range []string{
+		"select option, select optgroup",
+		"select { color-scheme: dark;",
+		".viewer-video-speed select option,.viewer-quality-inline select option",
+	} {
+		if !strings.Contains(css, expected) {
+			t.Fatalf("los selects deben conservar el tema también al desplegar opciones; falta %q", expected)
+		}
+	}
+}
+
+func TestVideoPlayerUsesAdaptiveQualityAndSmoothTimeline(t *testing.T) {
+	data, err := fs.ReadFile(Assets, "static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	js := string(data)
+	for _, expected := range []string{
+		"requestAnimationFrame(videoProgressLoop)",
+		"Range: 'bytes=0-524287'",
+		"const chooseAutoQuality",
+		"new Option('Auto', 'auto')",
+		"Auto · midiendo ancho de banda",
+		"`Cambiando a ${quality}p…`",
+		"adaptiveBandwidthFactor",
+	} {
+		if !strings.Contains(js, expected) {
+			t.Fatalf("reproducción adaptativa/timeline incompleta; falta %q", expected)
+		}
+	}
+}
+
+func TestViewerIncludesLocalLoadingOverlay(t *testing.T) {
+	data, err := fs.ReadFile(Assets, "pages/photos.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := string(data)
+	for _, expected := range []string{"data-viewer-loader", "viewer-loading-spinner", "data-viewer-loading-text", `step="0.01"`} {
+		if !strings.Contains(template, expected) {
+			t.Fatalf("el visor debe mostrar loader local durante cambios de calidad; falta %q", expected)
+		}
+	}
+}

@@ -26,7 +26,10 @@ var (
 	ErrInvalidQuality = errors.New("calidad de video inválida")
 )
 
-const variantRetention = 72 * time.Hour
+const (
+	variantRetention    = 72 * time.Hour
+	variantCacheVersion = "v2"
+)
 
 type Profile struct {
 	ID     string `json:"id"`
@@ -269,12 +272,13 @@ func (m *Manager) transcode(file catalog.File, profile Profile) {
 	_ = os.Remove(tmp)
 
 	filter := "scale=-2:trunc(min(" + strconv.Itoa(profile.Height) + "\\,ih)/2)*2"
+	maxRate, bufferSize := profileRate(profile.ID)
 	args := []string{
 		"-hide_banner", "-loglevel", "error", "-y",
 		"-i", handle.File.Name(),
 		"-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn",
 		"-vf", filter,
-		"-c:v", m.encoder, "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
+		"-c:v", m.encoder, "-preset", "veryfast", "-crf", "23", "-maxrate", maxRate, "-bufsize", bufferSize, "-pix_fmt", "yuv420p",
 		"-c:a", "aac", "-b:a", "128k",
 		"-movflags", "+faststart", "-f", "mp4", tmp,
 	}
@@ -382,8 +386,23 @@ func profileByID(id string) (Profile, bool) {
 	return Profile{}, false
 }
 
+func profileRate(id string) (string, string) {
+	switch id {
+	case "360":
+		return "900k", "1800k"
+	case "480":
+		return "1600k", "3200k"
+	case "720":
+		return "3200k", "6400k"
+	case "1080":
+		return "5800k", "11600k"
+	default:
+		return "1600k", "3200k"
+	}
+}
+
 func fingerprint(file catalog.File) string {
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%d:%d", file.Size, file.ModTime.UnixNano())))
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%d:%d", variantCacheVersion, file.Size, file.ModTime.UnixNano())))
 	return hex.EncodeToString(sum[:8])
 }
 

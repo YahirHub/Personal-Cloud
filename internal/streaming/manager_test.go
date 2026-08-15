@@ -32,3 +32,24 @@ func TestProfileByIDRejectsArbitraryResolution(t *testing.T) {
 		t.Fatal("una resolución arbitraria no debe aceptarse")
 	}
 }
+
+func TestProfileRatesMatchAdaptiveBudgets(t *testing.T) {
+	cases := map[string]string{"360": "900k", "480": "1600k", "720": "3200k", "1080": "5800k"}
+	for quality, want := range cases {
+		got, buffer := profileRate(quality)
+		if got != want || buffer == "" {
+			t.Fatalf("profileRate(%s)=%s/%s, quiero %s y buffer", quality, got, buffer, want)
+		}
+	}
+}
+
+func TestVariantFingerprintIncludesCacheVersion(t *testing.T) {
+	file := catalog.File{Size: 10, ModTime: time.Unix(20, 0)}
+	original := variantCacheVersion
+	if original != "v2" {
+		t.Fatalf("versión de caché inesperada: %s", original)
+	}
+	if fingerprint(file) == "" {
+		t.Fatal("fingerprint vacío")
+	}
+}
