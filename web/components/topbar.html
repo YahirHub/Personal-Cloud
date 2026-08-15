@@ -1,0 +1,27 @@
+{{define "topbar"}}
+<header class="drive-topbar">
+  <a class="drive-brand" href="/inicio" aria-label="Ir a la página principal">
+    <span class="drive-brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 40 36"><path d="M14.5 2.5h10.8l12.2 21.1-5.4 9.4H21.4L9.2 11.9z" fill="#0f9d58"/><path d="M14.5 2.5 2.5 23.6 7.9 33h10.8l12-21.1-5.4-9.4z" fill="#4285f4"/><path d="M2.5 23.6h24.2l5.4 9.4H7.9z" fill="#fbbc04"/></svg>
+    </span>
+    <span class="drive-brand-name">Nube</span>
+  </a>
+
+  <form class="drive-search" method="get" action="/archivos" role="search">
+    <span class="drive-search-icon" aria-hidden="true">{{template "icon-search" .}}</span>
+    <input name="q" value="{{.SearchQuery}}" type="search" autocomplete="off" placeholder="Buscar en Nube" aria-label="Buscar archivos">
+    <button class="drive-search-submit" type="submit">Buscar</button>
+  </form>
+
+  <div class="drive-topbar-actions">
+    <a class="drive-top-action" href="/configuracion" aria-label="Configuración" title="Configuración">{{template "icon-settings" .}}</a>
+    <details class="account-menu">
+      <summary class="avatar avatar-button" aria-label="Cuenta de {{.User.Username}}" title="Cuenta de {{.User.Username}}">{{slice .User.Username 0 1}}</summary>
+      <div class="account-popover">
+        <div class="account-popover-user"><span class="avatar">{{slice .User.Username 0 1}}</span><div><strong>{{.User.Username}}</strong><small>{{.User.Role}}</small></div></div>
+        <form method="post" action="/cerrar-sesion"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><button class="button button-ghost full" type="submit">Cerrar sesión</button></form>
+      </div>
+    </details>
+  </div>
+</header>
+{{end}}

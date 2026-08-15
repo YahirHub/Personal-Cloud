@@ -33,7 +33,7 @@ func (a *App) filesGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := a.csrfData(w, r, pageData{
-		Title:            "Archivos",
+		Title:            "Mi unidad",
 		Description:      "Explora el namespace virtual sin mantener todas las unidades montadas.",
 		CurrentPath:      "/archivos",
 		User:             user,
@@ -43,11 +43,63 @@ func (a *App) filesGet(w http.ResponseWriter, r *http.Request) {
 		ListingMode:      mode,
 		MoveDestinations: a.moveDestinations(r.Context()),
 	})
+	searchQuery := strings.TrimSpace(r.URL.Query().Get("q"))
+	data.SearchQuery = searchQuery
 	if discoverErr != nil {
 		data.StorageError = discoverErr.Error()
 	}
 	data.Info = r.URL.Query().Get("ok")
 	data.Error = r.URL.Query().Get("error")
+
+	if current == "/" && searchQuery != "" {
+		needle := strings.ToLower(searchQuery)
+		matches := make([]explorerItem, 0)
+		for _, file := range a.catalog.AllFiles() {
+			haystack := strings.ToLower(file.Name + " " + file.VirtualRoot + " " + file.RelativePath)
+			if !strings.Contains(haystack, needle) {
+				continue
+			}
+			view, ok := byID[file.StorageID]
+			if !ok {
+				continue
+			}
+			location := "/" + file.VirtualRoot
+			if parent := strings.Trim(path.Dir(strings.ReplaceAll(file.RelativePath, "\\", "/")), "/."); parent != "" {
+				location = path.Join(location, parent)
+			}
+			item := explorerItem{
+				ID:          file.ID,
+				Name:        file.Name,
+				Kind:        file.Kind,
+				Size:        file.Size,
+				ModTime:     file.ModTime,
+				DownloadURL: "/archivo/" + file.ID + "/original",
+				Offline:     !view.Online,
+				StorageName: view.Name,
+				Location:    location,
+				Health:      file.Health,
+			}
+			if file.Thumbnail {
+				item.ThumbnailURL = "/galeria/" + file.ID + "/miniatura"
+			}
+			matches = append(matches, item)
+		}
+		sort.SliceStable(matches, func(i, j int) bool {
+			if matches[i].ModTime.Equal(matches[j].ModTime) {
+				return strings.ToLower(matches[i].Name) < strings.ToLower(matches[j].Name)
+			}
+			return matches[i].ModTime.After(matches[j].ModTime)
+		})
+		if len(matches) > 300 {
+			matches = matches[:300]
+		}
+		data.SearchMode = true
+		data.ExplorerItems = matches
+		data.ExplorerCanWrite = hasAutoUploadTarget(views)
+		data.Breadcrumbs = []breadcrumbItem{{Name: "Resultados de búsqueda", URL: "/archivos?q=" + url.QueryEscape(searchQuery)}}
+		a.render(w, http.StatusOK, "files", data)
+		return
+	}
 
 	if current == "/" {
 		files := a.catalog.AllFiles()
@@ -358,6 +410,12 @@ func browseCatalog(files []catalog.File, relative string, view storagepkg.View) 
 			Size:        file.Size,
 			ModTime:     file.ModTime,
 			DownloadURL: "/archivo/" + file.ID + "/original",
+			ThumbnailURL: func() string {
+				if file.Thumbnail {
+					return "/galeria/" + file.ID + "/miniatura"
+				}
+				return ""
+			}(),
 			Offline:     !view.Online,
 			StorageName: view.Name,
 			Health:      file.Health,
@@ -414,7 +472,7 @@ func explorerURL(value string) string {
 }
 
 func explorerBreadcrumbs(value string) []breadcrumbItem {
-	items := []breadcrumbItem{{Name: "Archivos", URL: "/archivos"}}
+	items := []breadcrumbItem{{Name: "Mi unidad", URL: "/archivos"}}
 	clean, err := normalizeExplorerPath(value)
 	if err != nil || clean == "/" {
 		return items

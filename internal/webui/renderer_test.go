@@ -30,6 +30,8 @@ type renderData struct {
 	RetryAfter         int
 	User               *renderUser
 	Stats              renderStats
+	HomeFolders        []any
+	HomeFiles          []any
 	StorageItems       []any
 	StorageError       string
 	Media              []any
@@ -58,6 +60,8 @@ type renderData struct {
 	ListingHasNext     bool
 	ExplorerHasMore    bool
 	ExplorerNext       int
+	SearchQuery        string
+	SearchMode         bool
 	MaxUploadBytes     int64
 	MoveDestinations   []struct {
 		ID, Name, VirtualRoot, Category string

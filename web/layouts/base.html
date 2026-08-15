@@ -4,19 +4,22 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
-  <title>{{.Title}} · Nube personal</title>
+  <meta name="color-scheme" content="dark">
+  <title>{{.Title}} · Nube</title>
   <meta name="description" content="{{.Description}}">
   {{if .User}}<meta name="csrf-token" content="{{.CSRFToken}}">{{end}}
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/app.js" defer></script>
 </head>
 <body class="{{if .User}}app-body{{else}}auth-body{{end}}">
-  {{if .User}}{{template "sidebar" .}}{{end}}
-  <main class="{{if .User}}app-main{{else}}auth-main{{end}}">
-    {{template "content" .}}
-  </main>
-  {{if .User}}{{template "download-context" .}}{{template "selection-menu" .}}{{end}}
+  {{if .User}}
+    {{template "topbar" .}}
+    {{template "sidebar" .}}
+    <main class="app-main">{{template "content" .}}</main>
+    {{template "download-context" .}}{{template "selection-menu" .}}
+  {{else}}
+    <main class="auth-main">{{template "content" .}}</main>
+  {{end}}
 </body>
 </html>
 {{end}}

@@ -1,16 +1,17 @@
 {{define "sidebar"}}
 <aside class="sidebar">
-  <a class="brand" href="/inicio" aria-label="Ir al inicio"><span class="brand-mark">N</span><span>Nube personal</span></a>
+  <a class="drive-new-button" href="/archivos?nuevo=1" data-global-new>{{template "icon-plus" .}}<span>Nuevo</span></a>
   <nav class="nav" aria-label="Navegación principal">
-    <a class="nav-link {{if eq .CurrentPath "/inicio"}}active{{end}}" href="/inicio">{{template "icon-home" .}}<span>Inicio</span></a>
-    <a class="nav-link {{if eq .CurrentPath "/almacenamiento"}}active{{end}}" href="/almacenamiento">{{template "icon-storage" .}}<span>Almacenamiento</span></a>
-    <a class="nav-link {{if eq .CurrentPath "/archivos"}}active{{end}}" href="/archivos">{{template "icon-files" .}}<span>Archivos</span></a>
+    <a class="nav-link {{if eq .CurrentPath "/inicio"}}active{{end}}" href="/inicio">{{template "icon-home" .}}<span>Página principal</span></a>
+    <a class="nav-link {{if eq .CurrentPath "/archivos"}}active{{end}}" href="/archivos">{{template "icon-files" .}}<span>Mi unidad</span></a>
     <a class="nav-link {{if eq .CurrentPath "/galeria"}}active{{end}}" href="/galeria">{{template "icon-gallery" .}}<span>Galería</span></a>
+    <div class="nav-separator" aria-hidden="true"></div>
+    <a class="nav-link {{if eq .CurrentPath "/almacenamiento"}}active{{end}}" href="/almacenamiento">{{template "icon-storage" .}}<span>Almacenamiento</span></a>
     <a class="nav-link {{if eq .CurrentPath "/configuracion"}}active{{end}}" href="/configuracion">{{template "icon-settings" .}}<span>Configuración</span></a>
   </nav>
-  <div class="sidebar-footer">
-    <div class="user-chip"><span class="avatar">{{if .User}}{{slice .User.Username 0 1}}{{end}}</span><div><strong>{{if .User}}{{.User.Username}}{{end}}</strong><small>{{if .User}}{{.User.Role}}{{end}}</small></div></div>
-    <form method="post" action="/cerrar-sesion"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><button class="button button-ghost full" type="submit">Cerrar sesión</button></form>
+  <div class="sidebar-footer drive-sidebar-note">
+    <span class="drive-sidebar-note-icon">{{template "icon-storage" .}}</span>
+    <div><strong>Almacenamiento local</strong><small>Archivos y caché administrados por este servidor.</small></div>
   </div>
 </aside>
 {{end}}

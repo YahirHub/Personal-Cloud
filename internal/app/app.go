@@ -65,6 +65,8 @@ type pageData struct {
 	StorageItems       []storagePageItem
 	StorageError       string
 	Stats              dashboardStats
+	HomeFolders        []explorerRoot
+	HomeFiles          []homeFileItem
 	Media              []mediaPageItem
 	MediaOffset        int
 	MediaNext          int
@@ -91,6 +93,8 @@ type pageData struct {
 	ExplorerCanWrite   bool
 	ExplorerHasMore    bool
 	ExplorerNext       int
+	SearchQuery        string
+	SearchMode         bool
 	MaxUploadBytes     int64
 	Settings           store.AppSettings
 	SettingsSyncText   string

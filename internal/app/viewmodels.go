@@ -23,17 +23,19 @@ type mediaPageItem struct {
 }
 
 type explorerItem struct {
-	ID          string    `json:"id,omitempty"`
-	Name        string    `json:"name"`
-	Kind        string    `json:"kind"`
-	Size        int64     `json:"size"`
-	ModTime     time.Time `json:"mod_time"`
-	URL         string    `json:"url"`
-	DownloadURL string    `json:"download_url"`
-	IsDir       bool      `json:"is_dir"`
-	Offline     bool      `json:"offline"`
-	StorageName string    `json:"storage_name"`
-	Health      string    `json:"health,omitempty"`
+	ID           string    `json:"id,omitempty"`
+	Name         string    `json:"name"`
+	Kind         string    `json:"kind"`
+	Size         int64     `json:"size"`
+	ModTime      time.Time `json:"mod_time"`
+	URL          string    `json:"url"`
+	DownloadURL  string    `json:"download_url"`
+	ThumbnailURL string    `json:"thumbnail_url,omitempty"`
+	Location     string    `json:"location,omitempty"`
+	IsDir        bool      `json:"is_dir"`
+	Offline      bool      `json:"offline"`
+	StorageName  string    `json:"storage_name"`
+	Health       string    `json:"health,omitempty"`
 }
 
 type breadcrumbItem struct {
@@ -71,4 +73,24 @@ type dashboardStats struct {
 	Files   int
 	Photos  int
 	Bytes   int64
+}
+
+type homeFileItem struct {
+	ID           string
+	Name         string
+	Kind         string
+	Size         int64
+	ModTime      time.Time
+	VirtualRoot  string
+	ThumbnailURL string
+	OpenURL      string
+	Offline      bool
+	Health       string
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

@@ -30,10 +30,76 @@ func (a *App) dashboardGet(w http.ResponseWriter, r *http.Request) {
 	views, _ := a.storageManager.Views(r.Context())
 	stats := a.catalog.Stats()
 	var online int
+	registered := make([]storagepkg.View, 0, len(views))
+	viewByID := make(map[string]storagepkg.View, len(views))
 	for _, view := range views {
-		if view.Registered && view.Online {
+		if !view.Registered {
+			continue
+		}
+		registered = append(registered, view)
+		viewByID[view.ID] = view
+		if view.Online {
 			online++
 		}
+	}
+	sort.SliceStable(registered, func(i, j int) bool {
+		return strings.ToLower(registered[i].VirtualRoot) < strings.ToLower(registered[j].VirtualRoot)
+	})
+
+	files := a.catalog.AllFiles()
+	sort.SliceStable(files, func(i, j int) bool {
+		if files[i].ModTime.Equal(files[j].ModTime) {
+			return strings.ToLower(files[i].Name) < strings.ToLower(files[j].Name)
+		}
+		return files[i].ModTime.After(files[j].ModTime)
+	})
+
+	homeFolders := make([]explorerRoot, 0, minInt(len(registered), 4))
+	counts := make(map[string]int)
+	bytesByStorage := make(map[string]int64)
+	for _, file := range files {
+		counts[file.StorageID]++
+		bytesByStorage[file.StorageID] += file.Size
+	}
+	for _, view := range registered {
+		if len(homeFolders) >= 4 {
+			break
+		}
+		homeFolders = append(homeFolders, explorerRoot{
+			Name:       view.VirtualRoot,
+			URL:        explorerURL("/" + view.VirtualRoot),
+			Category:   view.Category,
+			Status:     view.Status,
+			FileCount:  counts[view.ID],
+			TotalBytes: bytesByStorage[view.ID],
+			Offline:    !view.Online,
+		})
+	}
+
+	homeFiles := make([]homeFileItem, 0, minInt(len(files), 10))
+	for _, file := range files {
+		if len(homeFiles) >= 10 {
+			break
+		}
+		view, ok := viewByID[file.StorageID]
+		if !ok {
+			continue
+		}
+		item := homeFileItem{
+			ID:          file.ID,
+			Name:        file.Name,
+			Kind:        file.Kind,
+			Size:        file.Size,
+			ModTime:     file.ModTime,
+			VirtualRoot: file.VirtualRoot,
+			OpenURL:     "/archivo/" + file.ID + "/original",
+			Offline:     !view.Online,
+			Health:      file.Health,
+		}
+		if file.Thumbnail {
+			item.ThumbnailURL = "/galeria/" + file.ID + "/miniatura"
+		}
+		homeFiles = append(homeFiles, item)
 	}
 	data := a.csrfData(w, r, pageData{
 		Title:       "Inicio",
@@ -47,6 +113,8 @@ func (a *App) dashboardGet(w http.ResponseWriter, r *http.Request) {
 			Photos:  stats.Photos,
 			Bytes:   stats.Bytes,
 		},
+		HomeFolders: homeFolders,
+		HomeFiles:   homeFiles,
 	})
 	a.render(w, http.StatusOK, "dashboard", data)
 }

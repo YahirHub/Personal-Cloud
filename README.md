@@ -14,6 +14,8 @@ Implementado:
 - CSRF y rate limit reutilizable.
 - Rate limit de login por IP y usuario.
 - URLs amigables y frontend con layout/componentes reutilizables.
+- Interfaz oscura inspirada estrechamente en Google Drive: topbar, búsqueda, navegación lateral, botón Nuevo, página principal con sugeridos y Mi unidad con cuadrícula/lista, manteniendo identidad propia y assets locales.
+- Búsqueda global local por nombre/ruta desde la barra superior, sin montar unidades para consultar el catálogo.
 - Detección de volúmenes Windows y Linux con identidad persistente independiente de letra, nombre o punto de montaje.
 - Windows conserva Volume GUID + serial del filesystem; Linux prioriza UUID y conserva PARTUUID/by-id como respaldo de identidad.
 - Registro de unidades con nombre, categoría, raíz virtual, solo lectura y timeout de inactividad.

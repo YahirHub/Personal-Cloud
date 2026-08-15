@@ -1,8 +1,8 @@
 {{define "content"}}
-<section class="page" data-gallery-page>
-  <header class="page-header page-header-actions">
-    <div><div class="eyebrow">Catálogo multimedia</div><h1>Galería</h1><p class="muted">Solo muestra contenido de unidades conectadas. Las miniaturas siguen disponibles aunque una unidad esté desmontada por inactividad.</p></div>
-    <div class="header-tools">{{template "listing-controls" .}}<button class="icon-button filter-button" type="button" data-open-gallery-filter aria-label="Filtrar y ordenar" title="Filtrar y ordenar">{{template "icon-filter" .}}{{if gt .GalleryFilters 0}}<span class="filter-count">{{.GalleryFilters}}</span>{{end}}</button><button class="icon-button" type="button" data-open-selection-menu aria-label="Opciones de selección" title="Opciones de selección">{{template "icon-more" .}}</button></div>
+<section class="page drive-page drive-gallery-page" data-gallery-page>
+  <header class="drive-files-header">
+    <div class="drive-breadcrumb-title"><span>Galería</span></div>
+    <div class="drive-files-actions">{{template "listing-controls" .}}<button class="button button-secondary drive-filter-chip filter-button" type="button" data-open-gallery-filter aria-label="Filtrar y ordenar" title="Filtrar y ordenar">{{template "icon-filter" .}} Filtrar{{if gt .GalleryFilters 0}}<span class="filter-count">{{.GalleryFilters}}</span>{{end}}</button><button class="icon-button" type="button" data-open-selection-menu aria-label="Opciones de selección" title="Opciones de selección">{{template "icon-more" .}}</button><span class="drive-title-info" title="Solo se muestran medios de unidades conectadas">{{template "icon-info" .}}</span></div>
   </header>
 
   {{if .Media}}

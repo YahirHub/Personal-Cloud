@@ -218,3 +218,60 @@ func TestViewerIncludesLocalLoadingOverlay(t *testing.T) {
 		}
 	}
 }
+
+func TestDriveDarkShellIsEmbedded(t *testing.T) {
+	cssData, err := fs.ReadFile(Assets, "static/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	css := string(cssData)
+	for _, expected := range []string{
+		"--drive-header-height: 72px",
+		".drive-topbar {",
+		".drive-search {",
+		".drive-new-button {",
+		".drive-home-files.is-grid",
+		".file-list.drive-file-list.is-grid",
+		"color-scheme: dark;",
+	} {
+		if !strings.Contains(css, expected) {
+			t.Fatalf("la interfaz tipo Drive oscura está incompleta; falta %q", expected)
+		}
+	}
+
+	layout, err := fs.ReadFile(Assets, "layouts/base.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(layout), `template "topbar"`) {
+		t.Fatal("el layout autenticado debe incluir la barra superior tipo Drive")
+	}
+
+	topbar, err := fs.ReadFile(Assets, "components/topbar.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{`action="/archivos"`, `name="q"`, `placeholder="Buscar en Nube"`} {
+		if !strings.Contains(string(topbar), expected) {
+			t.Fatalf("la búsqueda global debe permanecer visible y funcional; falta %q", expected)
+		}
+	}
+}
+
+func TestDriveViewsAndGlobalNewAreFunctional(t *testing.T) {
+	jsData, err := fs.ReadFile(Assets, "static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	js := string(jsData)
+	for _, expected := range []string{
+		"pc-drive-file-view",
+		"pc-drive-home-view",
+		"data-file-actions",
+		"get('nuevo') === '1'",
+	} {
+		if !strings.Contains(js, expected) {
+			t.Fatalf("la experiencia tipo Drive debe conservar controles reales; falta %q", expected)
+		}
+	}
+}

@@ -1,32 +1,57 @@
 {{define "content"}}
-<section class="page">
-  <header class="page-header">
-    <div>
-      <div class="eyebrow">Panel</div>
-      <h1>Hola, {{.User.Username}}</h1>
-      <p class="muted">Tu nube presenta varios medios físicos como un único servicio y mantiene los originales fríos hasta que realmente los necesitas.</p>
-    </div>
+<section class="page drive-page drive-home-page">
+  <header class="drive-page-titlebar">
+    <h1>Te damos la bienvenida a Nube</h1>
+    <span class="drive-title-info" title="Tu almacenamiento personal">{{template "icon-info" .}}</span>
   </header>
 
-  <div class="stats-grid stats-grid-4">
-    <article class="stat-card"><span>Unidades</span><strong>{{.Stats.Volumes}}</strong><small>{{.Stats.Online}} conectadas</small></article>
-    <article class="stat-card"><span>Archivos</span><strong>{{.Stats.Files}}</strong><small>{{formatBytes .Stats.Bytes}} catalogados</small></article>
-    <article class="stat-card"><span>Galería</span><strong>{{.Stats.Photos}}</strong><small>Imágenes catalogadas con caché interna</small></article>
-    <article class="stat-card"><span>Estado</span><strong>Operativo</strong><small>Healthcheck: /salud</small></article>
-  </div>
-
-  <div class="panel">
-    <h2>Almacenamiento por demanda</h2>
-    <p>Registra una unidad, define su categoría y raíz virtual, después inicia la indexación. Las miniaturas quedan disponibles aunque el disco vuelva a desmontarse.</p>
-    <div class="button-row">
-      <a class="button button-secondary" href="/almacenamiento">Administrar unidades</a>
-      <a class="button button-ghost" href="/galeria">Abrir galería</a>
+  {{if .HomeFolders}}
+  <section class="drive-section" aria-labelledby="home-folders-title">
+    <div class="drive-section-heading">
+      <h2 id="home-folders-title"><span class="drive-section-chevron">⌄</span> Carpetas sugeridas</h2>
     </div>
-  </div>
+    <div class="drive-suggested-folders">
+      {{range .HomeFolders}}
+      <a class="drive-folder-chip{{if .Offline}} is-offline{{end}}" href="{{.URL}}" data-offline="{{.Offline}}">
+        <span class="drive-folder-icon">{{template "icon-folder" $}}</span>
+        <span class="drive-folder-copy"><strong>{{.Name}}</strong><small>{{if .Offline}}No disponible · catálogo local{{else}}en Mi unidad{{end}}</small></span>
+        <span class="drive-card-more" aria-hidden="true">⋮</span>
+      </a>
+      {{end}}
+    </div>
+  </section>
+  {{end}}
 
-  <div class="panel">
-    <h2>WebDAV</h2>
-    <p>El servidor está publicado en <code>/webdav/</code> y reutiliza el mismo usuario y contraseña de la web. Fuera del equipo local exige HTTPS por defecto.</p>
-  </div>
+  <section class="drive-section drive-files-section" aria-labelledby="home-files-title">
+    <div class="drive-section-heading drive-section-heading-actions">
+      <h2 id="home-files-title"><span class="drive-section-chevron">⌄</span> Archivos sugeridos</h2>
+      {{if .HomeFiles}}
+      <div class="drive-view-toggle" role="group" aria-label="Vista de archivos sugeridos">
+        <button class="drive-view-button" type="button" data-home-view="list" aria-label="Vista de lista" title="Lista">{{template "icon-list" .}}</button>
+        <button class="drive-view-button active" type="button" data-home-view="grid" aria-label="Vista de cuadrícula" title="Cuadrícula">{{template "icon-grid" .}}</button>
+      </div>
+      {{end}}
+    </div>
+
+    {{if .HomeFiles}}
+    <div class="drive-home-files is-grid" data-home-files>
+      {{range .HomeFiles}}
+      <article class="drive-home-file-card{{if .Offline}} is-offline{{end}}{{if eq .Health "damaged"}} is-damaged{{end}}" data-download-file-id="{{.ID}}" data-offline="{{.Offline}}">
+        <div class="drive-home-file-head">
+          <span class="drive-kind-icon drive-kind-{{.Kind}}">{{if eq .Kind "image"}}{{template "icon-image" $}}{{else if eq .Kind "video"}}{{template "icon-video" $}}{{else if eq .Kind "audio"}}{{template "icon-audio" $}}{{else}}{{template "icon-files" $}}{{end}}</span>
+          <strong title="{{.Name}}">{{.Name}}</strong>
+          <button class="drive-more-button" type="button" data-file-actions="{{.ID}}" aria-label="Más acciones para {{.Name}}" title="Más acciones">{{template "icon-more" $}}</button>
+        </div>
+        <a class="drive-home-file-preview" href="{{.OpenURL}}" aria-label="Abrir {{.Name}}">
+          {{if .ThumbnailURL}}<img src="{{.ThumbnailURL}}" alt="" loading="lazy">{{else}}<span class="drive-preview-placeholder drive-kind-{{.Kind}}">{{if eq .Kind "image"}}{{template "icon-image" $}}{{else if eq .Kind "video"}}{{template "icon-video" $}}{{else if eq .Kind "audio"}}{{template "icon-audio" $}}{{else}}{{template "icon-files" $}}{{end}}</span>{{end}}
+        </a>
+        <div class="drive-home-file-meta"><span>{{if .Offline}}No disponible{{else}}Modificado {{formatTime .ModTime}}{{end}}</span><span>{{formatBytes .Size}}</span></div>
+      </article>
+      {{end}}
+    </div>
+    {{else}}
+    <div class="drive-empty-inline"><span class="drive-empty-icon">{{template "icon-files" .}}</span><div><strong>Aún no hay archivos sugeridos</strong><small>Registra e indexa una unidad para empezar a ver tus archivos aquí.</small></div></div>
+    {{end}}
+  </section>
 </section>
 {{end}}

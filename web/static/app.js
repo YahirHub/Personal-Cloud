@@ -90,6 +90,9 @@
   $('[data-open-upload]')?.addEventListener('click', () => uploadDialog?.showModal());
   $('[data-close-upload]')?.addEventListener('click', () => uploadDialog?.close());
   uploadDialog?.addEventListener('click', (event) => { if (event.target === uploadDialog) uploadDialog.close(); });
+  if (uploadDialog && new URLSearchParams(window.location.search).get('nuevo') === '1') {
+    window.setTimeout(() => uploadDialog.showModal(), 0);
+  }
 
   const filterDialog = $('[data-gallery-filter-dialog]');
   $('[data-open-gallery-filter]')?.addEventListener('click', () => filterDialog?.showModal());
@@ -126,6 +129,36 @@
     downloadMenu.style.left = `${left}px`;
     downloadMenu.style.top = `${top}px`;
   };
+  $$('[data-file-actions]').forEach((button) => button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = button.getBoundingClientRect();
+    showDownloadMenu(rect.right - 8, rect.bottom + 6, button.dataset.fileActions);
+  }));
+
+  const applyViewMode = (container, buttons, mode, storageKey) => {
+    if (!container || !['grid', 'list'].includes(mode)) return;
+    container.classList.toggle('is-grid', mode === 'grid');
+    container.classList.toggle('is-list', mode === 'list');
+    buttons.forEach((button) => button.classList.toggle('active', button.dataset.fileView === mode || button.dataset.homeView === mode));
+    try { window.localStorage.setItem(storageKey, mode); } catch (_) {}
+  };
+  const fileViewContainer = $('[data-files-list]');
+  const fileViewButtons = $$('[data-file-view]');
+  if (fileViewContainer && fileViewButtons.length) {
+    let mode = 'grid';
+    try { mode = window.localStorage.getItem('pc-drive-file-view') || 'grid'; } catch (_) {}
+    applyViewMode(fileViewContainer, fileViewButtons, mode, 'pc-drive-file-view');
+    fileViewButtons.forEach((button) => button.addEventListener('click', () => applyViewMode(fileViewContainer, fileViewButtons, button.dataset.fileView, 'pc-drive-file-view')));
+  }
+  const homeViewContainer = $('[data-home-files]');
+  const homeViewButtons = $$('[data-home-view]');
+  if (homeViewContainer && homeViewButtons.length) {
+    let mode = 'grid';
+    try { mode = window.localStorage.getItem('pc-drive-home-view') || 'grid'; } catch (_) {}
+    applyViewMode(homeViewContainer, homeViewButtons, mode, 'pc-drive-home-view');
+    homeViewButtons.forEach((button) => button.addEventListener('click', () => applyViewMode(homeViewContainer, homeViewButtons, button.dataset.homeView, 'pc-drive-home-view')));
+  }
   const startSecureDownload = async (fileID) => {
     if (!fileID || !csrfToken) return;
     const response = await fetch('/api/descargas', {
@@ -979,6 +1012,20 @@
       check.textContent = '✓';
       anchor.append(check);
     }
+    const preview = document.createElement('span');
+    preview.className = `file-card-preview${item.is_dir ? ' folder-preview' : ''}`;
+    if (item.thumbnail_url) {
+      const image = document.createElement('img');
+      image.src = item.thumbnail_url;
+      image.alt = '';
+      image.loading = 'lazy';
+      preview.append(image);
+    } else {
+      const placeholder = document.createElement('span');
+      placeholder.className = `drive-preview-placeholder drive-kind-${item.kind || 'file'}`;
+      placeholder.textContent = item.is_dir ? '■' : item.kind === 'image' ? '▧' : item.kind === 'video' ? '▶' : item.kind === 'audio' ? '♪' : '▤';
+      preview.append(placeholder);
+    }
     const kind = document.createElement('span');
     kind.className = `file-kind${item.is_dir ? ' folder' : ''}`;
     kind.textContent = item.is_dir ? '▣' : item.kind === 'image' ? '▧' : item.kind === 'video' ? '▶' : item.kind === 'audio' ? '♪' : item.kind === 'document' ? '▤' : item.kind === 'archive' ? '▥' : '•';
@@ -987,12 +1034,27 @@
     const strong = document.createElement('strong');
     strong.textContent = item.name;
     const small = document.createElement('small');
-    small.textContent = item.is_dir ? `Carpeta${item.offline ? ' · unidad desconectada' : ''}` : `${item.kind} · ${formatTime(item.mod_time)}${item.offline ? ' · original no disponible hasta reconectar' : ''}`;
+    small.textContent = item.is_dir ? `Carpeta${item.offline ? ' · unidad desconectada' : ''}` : `${item.location ? `${item.location} · ` : ''}${formatTime(item.mod_time)}${item.offline ? ' · original no disponible hasta reconectar' : ''}`;
     main.append(strong, small);
     const size = document.createElement('span');
     size.className = 'file-size';
     size.textContent = item.is_dir ? '—' : formatBytes(item.size);
-    anchor.append(kind, main, size);
+    anchor.append(preview, kind, main, size);
+    if (!item.is_dir && item.id) {
+      const more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'drive-more-button file-row-more';
+      more.dataset.fileActions = item.id;
+      more.setAttribute('aria-label', `Más acciones para ${item.name}`);
+      more.textContent = '⋮';
+      more.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const rect = more.getBoundingClientRect();
+        showDownloadMenu(rect.right - 8, rect.bottom + 6, item.id);
+      });
+      anchor.append(more);
+    }
     return anchor;
   };
   const loadMoreFiles = async () => {
