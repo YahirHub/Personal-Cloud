@@ -1,0 +1,20 @@
+{{define "content"}}
+<section class="auth-card" aria-labelledby="login-title">
+  <div class="eyebrow">Acceso</div>
+  <h1 id="login-title">Iniciar sesión</h1>
+  <p class="muted">Usa las credenciales de tu nube personal. El mismo sistema de cuentas se reutilizará para los protocolos de archivos.</p>
+  {{template "alert" .}}
+  <form method="post" action="/iniciar-sesion" class="form-stack">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>
+      <span>Usuario</span>
+      <input name="username" type="text" autocomplete="username" maxlength="32" required autofocus>
+    </label>
+    <label>
+      <span>Contraseña</span>
+      <input name="password" type="password" autocomplete="current-password" maxlength="128" required>
+    </label>
+    <button class="button button-primary full" type="submit">Entrar</button>
+  </form>
+</section>
+{{end}}

@@ -1,0 +1,29 @@
+# Binarios y builds
+/bin/
+/dist/
+*.exe
+*.out
+*.test
+coverage.out
+
+# Datos locales
+/data/*
+!/data/.gitkeep
+*.db
+*.db-shm
+*.db-wal
+
+# Configuración sensible
+.env
+.env.*
+!.env.example
+
+# IDE / sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Temporales
+*.tmp
+*.log

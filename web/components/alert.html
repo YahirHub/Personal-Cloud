@@ -1,0 +1,4 @@
+{{define "alert"}}
+  {{if .Error}}<div class="alert alert-error" role="alert">{{.Error}}{{if .RetryAfter}} <small>Reintenta en aproximadamente {{.RetryAfter}} segundos.</small>{{end}}</div>{{end}}
+  {{if .Info}}<div class="alert" role="status">{{.Info}}</div>{{end}}
+{{end}}

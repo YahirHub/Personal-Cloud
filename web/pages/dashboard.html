@@ -1,0 +1,23 @@
+{{define "content"}}
+<section class="page">
+  <header class="page-header">
+    <div>
+      <div class="eyebrow">Panel</div>
+      <h1>Hola, {{.User.Username}}</h1>
+      <p class="muted">La base del servidor ya está lista. Los módulos de almacenamiento se irán conectando sobre este núcleo.</p>
+    </div>
+  </header>
+
+  <div class="stats-grid">
+    <article class="stat-card"><span>Unidades</span><strong>0</strong><small>Sin medios registrados</small></article>
+    <article class="stat-card"><span>Archivos</span><strong>0</strong><small>Catálogo aún vacío</small></article>
+    <article class="stat-card"><span>Estado</span><strong>Listo</strong><small>Servidor operativo</small></article>
+  </div>
+
+  <div class="panel">
+    <h2>Siguiente paso</h2>
+    <p>Registrar unidades físicas, detectar su identidad persistente y comenzar el catálogo sin mantener los discos montados permanentemente.</p>
+    <a class="button button-secondary" href="/almacenamiento">Abrir almacenamiento</a>
+  </div>
+</section>
+{{end}}

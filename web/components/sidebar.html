@@ -1,0 +1,26 @@
+{{define "sidebar"}}
+<aside class="sidebar">
+  <a class="brand" href="/inicio" aria-label="Ir al inicio">
+    <span class="brand-mark">N</span>
+    <span>Nube personal</span>
+  </a>
+  <nav class="nav" aria-label="Navegación principal">
+    <a class="nav-link {{if eq .CurrentPath "/inicio"}}active{{end}}" href="/inicio">Inicio</a>
+    <a class="nav-link {{if eq .CurrentPath "/almacenamiento"}}active{{end}}" href="/almacenamiento">Almacenamiento</a>
+    <a class="nav-link {{if eq .CurrentPath "/fotos"}}active{{end}}" href="/fotos">Fotos</a>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="user-chip">
+      <span class="avatar">{{if .User}}{{slice .User.Username 0 1}}{{end}}</span>
+      <div>
+        <strong>{{if .User}}{{.User.Username}}{{end}}</strong>
+        <small>{{if .User}}{{.User.Role}}{{end}}</small>
+      </div>
+    </div>
+    <form method="post" action="/cerrar-sesion">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button class="button button-ghost full" type="submit">Cerrar sesión</button>
+    </form>
+  </div>
+</aside>
+{{end}}

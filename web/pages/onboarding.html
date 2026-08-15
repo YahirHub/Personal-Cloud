@@ -1,0 +1,35 @@
+{{define "content"}}
+<section class="page page-narrow">
+  <div class="eyebrow">Bienvenida</div>
+  <h1>Tu nube, varios discos, una sola biblioteca</h1>
+  <p class="lead">El servidor mantendrá un catálogo ligero siempre disponible y despertará cada unidad únicamente cuando necesites el archivo original.</p>
+
+  <div class="onboarding-grid">
+    <article class="feature-card">
+      <span class="step">01</span>
+      <h2>Conecta tus unidades</h2>
+      <p>Cada medio tendrá identidad y políticas propias. Podrás dedicarlo a documentos, multimedia o contenido mixto.</p>
+    </article>
+    <article class="feature-card">
+      <span class="step">02</span>
+      <h2>Todo se ve unificado</h2>
+      <p>El catálogo sabrá dónde vive cada archivo aunque el medio esté desmontado o desconectado.</p>
+    </article>
+    <article class="feature-card">
+      <span class="step">03</span>
+      <h2>Los originales descansan</h2>
+      <p>Miniaturas y metadatos vivirán en el almacenamiento interno. Abrir un original montará su unidad y el temporizador de inactividad podrá desmontarla después.</p>
+    </article>
+  </div>
+
+  <div class="callout">
+    <strong>Seguridad por diseño</strong>
+    <p>El acceso externo se realizará detrás de TLS/proxy, con autenticación, límites de intentos, sesiones protegidas y validación de operaciones.</p>
+  </div>
+
+  <form method="post" action="/bienvenida/completar" class="actions">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <button class="button button-primary" type="submit">Entendido, ir al panel</button>
+  </form>
+</section>
+{{end}}

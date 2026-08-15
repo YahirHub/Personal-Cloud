@@ -1,0 +1,19 @@
+{{define "base"}}
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>{{.Title}} · Nube personal</title>
+  <meta name="description" content="{{.Description}}">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="{{if .User}}app-body{{else}}auth-body{{end}}">
+  {{if .User}}{{template "sidebar" .}}{{end}}
+  <main class="{{if .User}}app-main{{else}}auth-main{{end}}">
+    {{template "content" .}}
+  </main>
+</body>
+</html>
+{{end}}

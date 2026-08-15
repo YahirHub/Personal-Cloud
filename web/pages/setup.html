@@ -1,0 +1,30 @@
+{{define "content"}}
+<section class="auth-card" aria-labelledby="setup-title">
+  <div class="eyebrow">Primer arranque</div>
+  <h1 id="setup-title">Configura tu servidor</h1>
+  <p class="muted">El código de configuración se genera en cada arranque mientras no exista un administrador. Búscalo en el log del servidor.</p>
+  {{template "alert" .}}
+  <form method="post" action="/setup" class="form-stack" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>
+      <span>Código de configuración</span>
+      <input name="setup_code" type="text" inputmode="text" autocapitalize="characters" placeholder="ABCD-EFGH-JKLM" maxlength="14" required autofocus>
+    </label>
+    <label>
+      <span>Usuario administrador</span>
+      <input name="username" type="text" autocomplete="username" minlength="3" maxlength="32" placeholder="administrador" required>
+    </label>
+    <label>
+      <span>Contraseña</span>
+      <input name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+      <small>Usa al menos 12 caracteres.</small>
+    </label>
+    <label>
+      <span>Confirmar contraseña</span>
+      <input name="password_confirmation" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+    </label>
+    <button class="button button-primary full" type="submit">Crear administrador</button>
+  </form>
+  <p class="security-note">El código no se guarda en la base de datos y deja de ser válido cuando se crea el primer administrador.</p>
+</section>
+{{end}}
