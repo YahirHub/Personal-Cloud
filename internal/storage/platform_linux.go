@@ -84,6 +84,20 @@ func discoverPlatformVolumes(ctx context.Context, mountRoot string) ([]Discovere
 	return result, nil
 }
 
+func discoverPlatformPresence(ctx context.Context) (map[string]struct{}, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	result := make(map[string]struct{})
+	for _, identity := range linuxPersistentIdentities() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		result[strings.ToLower(identity.kind+":"+identity.value)] = struct{}{}
+	}
+	return result, nil
+}
+
 type linuxIdentity struct{ kind, value, link string }
 
 func linuxPersistentIdentities() []linuxIdentity {

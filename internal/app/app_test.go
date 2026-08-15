@@ -247,7 +247,7 @@ func TestGalleryTemplateIsOfflineAndHasMediaViewer(t *testing.T) {
 		t.Fatal(err)
 	}
 	html := out.String()
-	for _, want := range []string{"Galería", "data-media-viewer", "A/D", "W/S", "data-gallery-sentinel"} {
+	for _, want := range []string{"Galería", "data-media-viewer", "A/D", "W/S", "data-gallery-sentinel", "data-viewer-fullscreen", "data-open-gallery-filter", "data-download-file-id"} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("galería no contiene %q", want)
 		}
@@ -296,5 +296,19 @@ func TestListingModeDefaultsToInfiniteAndPersistsChoice(t *testing.T) {
 	cookie := findCookie(rr.Result().Cookies(), listingCookie)
 	if cookie == nil || cookie.Value != "paginas" {
 		t.Fatal("la preferencia de listado debe persistirse")
+	}
+}
+
+func TestGallerySelectionAndURLsPreserveFilters(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/galeria?tipo=video&orden=name-az", nil)
+	kind, order := gallerySelection(req)
+	if kind != "video" || order != "name-az" {
+		t.Fatalf("selección=%s/%s", kind, order)
+	}
+	url := galleryURL(kind, order, "paginas", 3)
+	for _, want := range []string{"tipo=video", "orden=name-az", "modo=paginas", "pagina=3"} {
+		if !strings.Contains(url, want) {
+			t.Fatalf("URL %q no conserva %q", url, want)
+		}
 	}
 }

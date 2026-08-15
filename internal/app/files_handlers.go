@@ -351,6 +351,7 @@ func browseCatalog(files []catalog.File, relative string, view storagepkg.View) 
 			continue
 		}
 		result = append(result, explorerItem{
+			ID:          file.ID,
 			Name:        file.Name,
 			Kind:        file.Kind,
 			Size:        file.Size,

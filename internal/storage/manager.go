@@ -105,6 +105,27 @@ func (m *Manager) Discover(ctx context.Context) ([]DiscoveredVolume, error) {
 	return discoverPlatformVolumes(ctx, m.mountRoot)
 }
 
+// OnlineRegisteredIDs comprueba presencia física mediante identidad persistente sin
+// consultar capacidad ni recorrer contenido. Se usa para vistas que deben reaccionar
+// a desconexiones sin despertar discos solo para obtener espacio libre.
+func (m *Manager) OnlineRegisteredIDs(ctx context.Context) (map[string]struct{}, error) {
+	present, err := discoverPlatformPresence(ctx)
+	if err != nil {
+		return nil, err
+	}
+	registered, err := m.store.ListStorageVolumes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make(map[string]struct{})
+	for _, cfg := range registered {
+		if _, ok := present[strings.ToLower(cfg.PersistentID)]; ok {
+			ids[cfg.ID] = struct{}{}
+		}
+	}
+	return ids, nil
+}
+
 func (m *Manager) Views(ctx context.Context) ([]View, error) {
 	discovered, discoverErr := m.Discover(ctx)
 	registered, err := m.store.ListStorageVolumes(ctx)

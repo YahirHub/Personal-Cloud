@@ -22,6 +22,7 @@ type mediaPageItem struct {
 }
 
 type explorerItem struct {
+	ID          string    `json:"id,omitempty"`
 	Name        string    `json:"name"`
 	Kind        string    `json:"kind"`
 	Size        int64     `json:"size"`

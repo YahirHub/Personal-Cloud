@@ -41,6 +41,7 @@ type App struct {
 	webdav            *webdavserver.Server
 	davAuthMu         sync.Mutex
 	davAuthSecret     [32]byte
+	downloadSecret    [32]byte
 	davAuthCache      map[string]davAuthCacheEntry
 	lastBackupDay     string
 	stop              chan struct{}
@@ -48,37 +49,44 @@ type App struct {
 }
 
 type pageData struct {
-	Title            string
-	Description      string
-	CurrentPath      string
-	CSRFToken        string
-	Error            string
-	Info             string
-	User             *store.User
-	RetryAfter       int
-	StorageItems     []storagePageItem
-	StorageError     string
-	Stats            dashboardStats
-	Media            []mediaPageItem
-	MediaOffset      int
-	MediaNext        int
-	MediaHasMore     bool
-	MediaTotal       int
-	ListingMode      string
-	ListingBaseURL   string
-	ListingPage      int
-	ListingPrev      int
-	ListingNext      int
-	ListingHasPrev   bool
-	ListingHasNext   bool
-	ExplorerItems    []explorerItem
-	ExplorerRoots    []explorerRoot
-	Breadcrumbs      []breadcrumbItem
-	ExplorerPath     string
-	ExplorerCanWrite bool
-	ExplorerHasMore  bool
-	ExplorerNext     int
-	MaxUploadBytes   int64
+	Title              string
+	Description        string
+	CurrentPath        string
+	CSRFToken          string
+	Error              string
+	Info               string
+	User               *store.User
+	RetryAfter         int
+	StorageItems       []storagePageItem
+	StorageError       string
+	Stats              dashboardStats
+	Media              []mediaPageItem
+	MediaOffset        int
+	MediaNext          int
+	MediaHasMore       bool
+	MediaTotal         int
+	GalleryType        string
+	GallerySort        string
+	GalleryFilters     int
+	ListingMode        string
+	ListingBaseURL     string
+	ListingInfiniteURL string
+	ListingPagesURL    string
+	ListingPrevURL     string
+	ListingNextURL     string
+	ListingPage        int
+	ListingPrev        int
+	ListingNext        int
+	ListingHasPrev     bool
+	ListingHasNext     bool
+	ExplorerItems      []explorerItem
+	ExplorerRoots      []explorerRoot
+	Breadcrumbs        []breadcrumbItem
+	ExplorerPath       string
+	ExplorerCanWrite   bool
+	ExplorerHasMore    bool
+	ExplorerNext       int
+	MaxUploadBytes     int64
 }
 
 type contextKey string
@@ -86,9 +94,10 @@ type contextKey string
 const userContextKey contextKey = "user"
 
 var (
-	setupPolicy     = ratelimit.Policy{MaxAttempts: 5, Window: 10 * time.Minute}
-	loginIPPolicy   = ratelimit.Policy{MaxAttempts: 12, Window: 15 * time.Minute}
-	loginUserPolicy = ratelimit.Policy{MaxAttempts: 6, Window: 15 * time.Minute}
+	setupPolicy          = ratelimit.Policy{MaxAttempts: 5, Window: 10 * time.Minute}
+	loginIPPolicy        = ratelimit.Policy{MaxAttempts: 12, Window: 15 * time.Minute}
+	loginUserPolicy      = ratelimit.Policy{MaxAttempts: 6, Window: 15 * time.Minute}
+	downloadTicketPolicy = ratelimit.Policy{MaxAttempts: 120, Window: time.Minute}
 )
 
 const (
@@ -124,6 +133,10 @@ func New(cfg config.Config, storage *store.Store, logger *slog.Logger) (*App, er
 	if _, err := rand.Read(davAuthSecret[:]); err != nil {
 		return nil, fmt.Errorf("preparar caché de autenticación WebDAV: %w", err)
 	}
+	var downloadSecret [32]byte
+	if _, err := rand.Read(downloadSecret[:]); err != nil {
+		return nil, fmt.Errorf("preparar descargas seguras: %w", err)
+	}
 
 	a := &App{
 		cfg:               cfg,
@@ -139,6 +152,7 @@ func New(cfg config.Config, storage *store.Store, logger *slog.Logger) (*App, er
 		vfs:               virtualFS,
 		webdav:            dav,
 		davAuthSecret:     davAuthSecret,
+		downloadSecret:    downloadSecret,
 		davAuthCache:      make(map[string]davAuthCacheEntry),
 		stop:              make(chan struct{}),
 	}
@@ -202,6 +216,7 @@ func (a *App) routes() {
 	a.mux.Handle("POST /archivos/subir", a.requireAuth(http.HandlerFunc(a.filesUploadPost)))
 	a.mux.Handle("GET /galeria", a.requireAuth(http.HandlerFunc(a.galleryGet)))
 	a.mux.Handle("GET /api/galeria", a.requireAuth(http.HandlerFunc(a.galleryAPI)))
+	a.mux.Handle("GET /api/galeria/disponibilidad", a.requireAuth(http.HandlerFunc(a.galleryAvailabilityAPI)))
 	a.mux.Handle("GET /api/indexacion", a.requireAuth(http.HandlerFunc(a.indexStatusAPI)))
 	a.mux.Handle("GET /galeria/{id}/miniatura", a.requireAuth(http.HandlerFunc(a.photoThumbnailGet)))
 	a.mux.Handle("GET /galeria/{id}/vista-previa", a.requireAuth(http.HandlerFunc(a.photoPreviewGet)))
@@ -209,6 +224,8 @@ func (a *App) routes() {
 		http.Redirect(w, r, "/galeria", http.StatusMovedPermanently)
 	})))
 	a.mux.Handle("GET /archivo/{id}/original", a.requireAuth(http.HandlerFunc(a.originalFileGet)))
+	a.mux.Handle("POST /api/descargas", a.requireAuth(http.HandlerFunc(a.downloadTicketPost)))
+	a.mux.Handle("GET /descarga/{token}", a.requireAuth(http.HandlerFunc(a.secureDownloadGet)))
 	a.mux.Handle("POST /almacenamiento/registrar", a.requireAuth(http.HandlerFunc(a.storageRegisterPost)))
 	a.mux.Handle("POST /almacenamiento/{id}/configuracion", a.requireAuth(http.HandlerFunc(a.storageUpdatePost)))
 	a.mux.Handle("POST /almacenamiento/{id}/montar", a.requireAuth(http.HandlerFunc(a.storageMountPost)))

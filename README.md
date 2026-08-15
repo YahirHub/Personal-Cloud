@@ -23,8 +23,11 @@ Implementado:
 - Catálogo persistente separado del estado de autenticación.
 - Indexación de archivos con una sola cola para minimizar actividad simultánea sobre HDD y progreso real procesados/total en tiempo real.
 - Miniaturas de hasta 320 px y previews de hasta 1600 px para JPEG/PNG/GIF; FFmpeg amplía formatos de imagen y genera portadas multimedia cuando está disponible.
-- Galería `/galeria` que usa la caché interna aunque el disco original esté desmontado.
-- Visor offline de imagen/video/audio con navegación ←/→ o A/D y zoom suave W/S.
+- Galería `/galeria` que usa la caché interna aunque el disco original esté desmontado y oculta medios de unidades físicamente desconectadas.
+- Filtro compacto por imágenes/video/audio y orden por fecha de archivo, fecha de incorporación o nombre.
+- Visor offline de imagen/video/audio centrado a viewport completo, con navegación ←/→ o A/D, zoom suave W/S y pantalla completa para video.
+- Preferencias locales persistentes del reproductor de video: mute, volumen y velocidad.
+- Descarga por clic derecho mediante ticket AES-GCM opaco, ligado al usuario y de vida corta; las URLs no revelan ruta, storage ID ni nombre del archivo.
 - Scroll infinito por defecto o paginación persistente mediante un componente de listado reutilizable.
 - Apertura del original mediante montaje bajo demanda.
 - Upload contextual mediante botón/widget dentro de la carpeta actual de `/archivos/ver/...`.
@@ -257,7 +260,9 @@ Controles del visor:
 - `←` / `→` o `A` / `D`: medio anterior/siguiente;
 - `W` / `S`: zoom suave de la imagen/video visible;
 - `Esc`: cerrar;
-- video y audio usan los controles HTML5 nativos.
+- video y audio usan los controles HTML5 nativos; el visor añade un botón de pantalla completa para video.
+- mute, volumen y velocidad de video se guardan en el navegador y se restauran al cambiar de video o recargar.
+- clic derecho sobre un medio permite solicitar una descarga segura mediante ticket opaco.
 
 JPEG, PNG y GIF generan miniatura/preview usando únicamente la biblioteca estándar. Para proteger el MiniPC frente a imágenes que disparen el uso de RAM, una fuente que el decoder nativo identifica con más de 80 megapíxeles se cataloga pero no se decodifica para thumbnail.
 
@@ -276,7 +281,17 @@ Galería y Archivos comparten dos modos:
 - **Continuo** (`infinito`): predeterminado; carga automáticamente más elementos al acercarse al final mediante `IntersectionObserver`;
 - **Páginas**: navegación anterior/siguiente.
 
-La preferencia se guarda en una cookie local del navegador y el componente se reutiliza en ambas vistas.
+La preferencia se guarda en una cookie local del navegador y el componente se reutiliza en ambas vistas. Los filtros de Galería viajan en la URL para que actualizar, volver atrás o compartir una vista mantenga el criterio elegido.
+
+### Disponibilidad de unidades
+
+La Galería solo consulta medios cuyo `storage_id` pertenece a una unidad registrada y actualmente conectada. La comprobación de presencia usa GUID/UUID y evita consultar capacidad o recorrer contenido, para no despertar el disco únicamente por mantener abierta la Galería. Un volumen desmontado automáticamente por inactividad sigue considerándose disponible: sus miniaturas permanecen visibles y el VFS lo montará al abrir el original. Si el medio físico se desconecta, sus tarjetas desaparecen de la Galería sin borrar el catálogo. Al reconectarlo vuelve a aparecer sin perder metadata.
+
+### Descarga segura
+
+El clic derecho no expone una ruta física ni reutiliza la URL estable del original. El navegador solicita primero `POST /api/descargas`; el servidor devuelve un ticket AES-GCM aleatorio, ligado al usuario autenticado y válido durante un periodo corto. La descarga final vive bajo `/descarga/<ticket>` y usa `Content-Disposition: attachment`, `Cache-Control: no-store` y auditoría. Fuera de loopback, tanto la emisión del ticket como la descarga rechazan HTTP y requieren HTTPS. Los logs redactan el ticket.
+
+Esto protege identificadores/rutas frente a observadores y evita URLs de descarga predecibles. HTTPS sigue siendo obligatorio para confidencialidad de los bytes en tránsito. Si un reverse proxy termina TLS, por definición ese proxy es un extremo de la conexión y puede observar el HTTP descifrado; para impedirlo se necesita TLS passthrough/túnel extremo a extremo, no una cabecera adicional de Personal Cloud.
 
 ## WebDAV
 

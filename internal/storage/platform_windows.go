@@ -122,6 +122,36 @@ func discoverPlatformVolumes(ctx context.Context, mountRoot string) ([]Discovere
 	return result, nil
 }
 
+func discoverPlatformPresence(ctx context.Context) (map[string]struct{}, error) {
+	buffer := make([]uint16, 1024)
+	handle, _, callErr := procFindFirstVolumeW.Call(uintptr(unsafe.Pointer(&buffer[0])), uintptr(len(buffer)))
+	if handle == ^uintptr(0) {
+		return nil, fmt.Errorf("enumerar presencia de volúmenes: %w", callErr)
+	}
+	defer procFindVolumeClose.Call(handle)
+	result := make(map[string]struct{})
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		volumeName := syscall.UTF16ToString(buffer)
+		if volumeName != "" {
+			result[strings.ToLower("volume:"+volumeName)] = struct{}{}
+		}
+		for i := range buffer {
+			buffer[i] = 0
+		}
+		r1, _, nextErr := procFindNextVolumeW.Call(handle, uintptr(unsafe.Pointer(&buffer[0])), uintptr(len(buffer)))
+		if r1 == 0 {
+			if errno, ok := nextErr.(syscall.Errno); ok && errno == syscall.ERROR_NO_MORE_FILES {
+				break
+			}
+			break
+		}
+	}
+	return result, nil
+}
+
 func mountPlatformVolume(ctx context.Context, cfg store.StorageVolume, detected DiscoveredVolume, mountRoot string) (string, error) {
 	if detected.Mounted && detected.MountPoint != "" {
 		return detected.MountPoint, nil

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"personalcloud/internal/auth"
@@ -15,7 +16,7 @@ func (a *App) securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
 		if a.cfg.RequireHTTPS && a.requestIsHTTPS(r) {
 			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
@@ -27,7 +28,11 @@ func (a *App) requestLog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		next.ServeHTTP(w, r)
-		a.logger.Info("http", "method", r.Method, "path", r.URL.Path, "ip", a.clientIP(r), "elapsed_ms", time.Since(start).Milliseconds())
+		logPath := r.URL.Path
+		if strings.HasPrefix(logPath, "/descarga/") {
+			logPath = "/descarga/{token}"
+		}
+		a.logger.Info("http", "method", r.Method, "path", logPath, "ip", a.clientIP(r), "elapsed_ms", time.Since(start).Milliseconds())
 	})
 }
 

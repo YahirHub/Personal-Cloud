@@ -20,37 +20,44 @@ type renderStats struct {
 }
 
 type renderData struct {
-	Title            string
-	Description      string
-	CurrentPath      string
-	CSRFToken        string
-	Error            string
-	Info             string
-	RetryAfter       int
-	User             *renderUser
-	Stats            renderStats
-	StorageItems     []any
-	StorageError     string
-	Media            []any
-	ExplorerItems    []any
-	ExplorerRoots    []any
-	Breadcrumbs      []any
-	ExplorerPath     string
-	ExplorerCanWrite bool
-	MediaOffset      int
-	MediaNext        int
-	MediaHasMore     bool
-	MediaTotal       int
-	ListingMode      string
-	ListingBaseURL   string
-	ListingPage      int
-	ListingPrev      int
-	ListingNext      int
-	ListingHasPrev   bool
-	ListingHasNext   bool
-	ExplorerHasMore  bool
-	ExplorerNext     int
-	MaxUploadBytes   int64
+	Title              string
+	Description        string
+	CurrentPath        string
+	CSRFToken          string
+	Error              string
+	Info               string
+	RetryAfter         int
+	User               *renderUser
+	Stats              renderStats
+	StorageItems       []any
+	StorageError       string
+	Media              []any
+	ExplorerItems      []any
+	ExplorerRoots      []any
+	Breadcrumbs        []any
+	ExplorerPath       string
+	ExplorerCanWrite   bool
+	MediaOffset        int
+	MediaNext          int
+	MediaHasMore       bool
+	MediaTotal         int
+	ListingMode        string
+	ListingBaseURL     string
+	ListingInfiniteURL string
+	ListingPagesURL    string
+	ListingPrevURL     string
+	ListingNextURL     string
+	GalleryType        string
+	GallerySort        string
+	GalleryFilters     int
+	ListingPage        int
+	ListingPrev        int
+	ListingNext        int
+	ListingHasPrev     bool
+	ListingHasNext     bool
+	ExplorerHasMore    bool
+	ExplorerNext       int
+	MaxUploadBytes     int64
 }
 
 func TestRenderPages(t *testing.T) {

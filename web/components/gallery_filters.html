@@ -1,0 +1,27 @@
+{{define "gallery-filters"}}
+<dialog class="filter-dialog" data-gallery-filter-dialog>
+  <form class="dialog-card filter-card" method="get" action="/galeria">
+    <div class="dialog-head"><div><div class="eyebrow">Galería</div><h2>Filtrar y ordenar</h2></div><button class="icon-button" type="button" data-close-gallery-filter aria-label="Cerrar">{{template "icon-close" .}}</button></div>
+    <input type="hidden" name="modo" value="{{.ListingMode}}">
+    <label>Tipo
+      <select name="tipo">
+        <option value="all" {{if eq .GalleryType "all"}}selected{{end}}>Todo</option>
+        <option value="image" {{if eq .GalleryType "image"}}selected{{end}}>Solo imágenes</option>
+        <option value="video" {{if eq .GalleryType "video"}}selected{{end}}>Solo videos</option>
+        <option value="audio" {{if eq .GalleryType "audio"}}selected{{end}}>Solo música / audio</option>
+      </select>
+    </label>
+    <label>Orden
+      <select name="orden">
+        <option value="file-newest" {{if eq .GallerySort "file-newest"}}selected{{end}}>Fecha del archivo · reciente primero</option>
+        <option value="file-oldest" {{if eq .GallerySort "file-oldest"}}selected{{end}}>Fecha del archivo · antiguo primero</option>
+        <option value="added-newest" {{if eq .GallerySort "added-newest"}}selected{{end}}>Añadidos recientemente</option>
+        <option value="added-oldest" {{if eq .GallerySort "added-oldest"}}selected{{end}}>Añadidos más antiguos</option>
+        <option value="name-az" {{if eq .GallerySort "name-az"}}selected{{end}}>Nombre A → Z</option>
+        <option value="name-za" {{if eq .GallerySort "name-za"}}selected{{end}}>Nombre Z → A</option>
+      </select>
+    </label>
+    <div class="button-row"><a class="button button-secondary" href="/galeria?modo={{.ListingMode}}">Restablecer</a><button class="button button-primary" type="submit">Aplicar</button></div>
+  </form>
+</dialog>
+{{end}}

@@ -1,7 +1,7 @@
 {{define "listing-controls"}}
 <div class="listing-controls" data-listing-controls>
   <span>Mostrar</span>
-  <a class="listing-option {{if eq .ListingMode "infinito"}}active{{end}}" href="{{.ListingBaseURL}}?modo=infinito">Continuo</a>
-  <a class="listing-option {{if eq .ListingMode "paginas"}}active{{end}}" href="{{.ListingBaseURL}}?modo=paginas">Páginas</a>
+  <a class="listing-option {{if eq .ListingMode "infinito"}}active{{end}}" href="{{if .ListingInfiniteURL}}{{.ListingInfiniteURL}}{{else}}{{.ListingBaseURL}}?modo=infinito{{end}}">Continuo</a>
+  <a class="listing-option {{if eq .ListingMode "paginas"}}active{{end}}" href="{{if .ListingPagesURL}}{{.ListingPagesURL}}{{else}}{{.ListingBaseURL}}?modo=paginas{{end}}">Páginas</a>
 </div>
 {{end}}

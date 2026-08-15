@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -85,13 +86,16 @@ func (a *App) storageGet(w http.ResponseWriter, r *http.Request) {
 func (a *App) galleryGet(w http.ResponseWriter, r *http.Request) {
 	user := userFromContext(r.Context())
 	mode := a.resolveListingMode(w, r)
+	kind, sortMode := gallerySelection(r)
+	online := a.onlineStorageIDs(r.Context())
+	query := catalog.MediaQuery{Kind: kind, Sort: sortMode, StorageIDs: online}
 	const pageSize = 80
 	page := parsePositiveInt(r.URL.Query().Get("pagina"), 1)
 	offset := 0
 	if mode == "paginas" {
 		offset = (page - 1) * pageSize
 	}
-	files := a.catalog.ListMedia(offset, pageSize+1)
+	files := a.catalog.ListMediaQuery(offset, pageSize+1, query)
 	hasMore := len(files) > pageSize
 	if hasMore {
 		files = files[:pageSize]
@@ -100,11 +104,23 @@ func (a *App) galleryGet(w http.ResponseWriter, r *http.Request) {
 	for _, file := range files {
 		media = append(media, a.mediaItem(file))
 	}
-	total := a.catalog.MediaCount()
+	total := a.catalog.MediaCountQuery(query)
+	filters := 0
+	if kind != "all" {
+		filters++
+	}
+	if sortMode != "file-newest" {
+		filters++
+	}
 	data := a.csrfData(w, r, pageData{
 		Title: "Galería", Description: "Imágenes, videos y audio con caché local y originales bajo demanda.", CurrentPath: "/galeria", User: user,
 		Media: media, MediaOffset: offset, MediaNext: offset + len(files), MediaHasMore: hasMore, MediaTotal: total,
+		GalleryType: kind, GallerySort: sortMode, GalleryFilters: filters,
 		ListingMode: mode, ListingBaseURL: "/galeria", ListingPage: page, ListingPrev: maxInt(page-1, 1), ListingNext: page + 1, ListingHasPrev: page > 1, ListingHasNext: hasMore,
+		ListingInfiniteURL: galleryURL(kind, sortMode, "infinito", 0),
+		ListingPagesURL:    galleryURL(kind, sortMode, "paginas", 1),
+		ListingPrevURL:     galleryURL(kind, sortMode, "paginas", maxInt(page-1, 1)),
+		ListingNextURL:     galleryURL(kind, sortMode, "paginas", page+1),
 	})
 	a.render(w, http.StatusOK, "photos", data)
 }
@@ -126,7 +142,9 @@ func (a *App) galleryAPI(w http.ResponseWriter, r *http.Request) {
 	if limit > 120 {
 		limit = 120
 	}
-	files := a.catalog.ListMedia(offset, limit+1)
+	kind, sortMode := gallerySelection(r)
+	query := catalog.MediaQuery{Kind: kind, Sort: sortMode, StorageIDs: a.onlineStorageIDs(r.Context())}
+	files := a.catalog.ListMediaQuery(offset, limit+1, query)
 	hasMore := len(files) > limit
 	if hasMore {
 		files = files[:limit]
@@ -138,6 +156,62 @@ func (a *App) galleryAPI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(map[string]any{"items": items, "next": offset + len(files), "has_more": hasMore})
+}
+
+func (a *App) galleryAvailabilityAPI(w http.ResponseWriter, r *http.Request) {
+	ids := a.onlineStorageIDs(r.Context())
+	out := make([]string, 0, len(ids))
+	for id := range ids {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(map[string]any{"online_storage_ids": out})
+}
+
+func (a *App) onlineStorageIDs(ctx context.Context) map[string]struct{} {
+	ids, err := a.storageManager.OnlineRegisteredIDs(ctx)
+	if err != nil {
+		return map[string]struct{}{}
+	}
+	return ids
+}
+
+func gallerySelection(r *http.Request) (string, string) {
+	kind := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("tipo")))
+	switch kind {
+	case "image", "video", "audio":
+	default:
+		kind = "all"
+	}
+	sortMode := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("orden")))
+	switch sortMode {
+	case "added-newest", "added-oldest", "file-newest", "file-oldest", "name-az", "name-za":
+	default:
+		sortMode = "file-newest"
+	}
+	return kind, sortMode
+}
+
+func galleryURL(kind, sortMode, mode string, page int) string {
+	values := url.Values{}
+	if kind != "" && kind != "all" {
+		values.Set("tipo", kind)
+	}
+	if sortMode != "" && sortMode != "file-newest" {
+		values.Set("orden", sortMode)
+	}
+	if mode != "" {
+		values.Set("modo", mode)
+	}
+	if page > 1 {
+		values.Set("pagina", strconv.Itoa(page))
+	}
+	if len(values) == 0 {
+		return "/galeria"
+	}
+	return "/galeria?" + values.Encode()
 }
 
 func (a *App) indexStatusAPI(w http.ResponseWriter, r *http.Request) {

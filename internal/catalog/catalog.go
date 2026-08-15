@@ -141,27 +141,24 @@ func (c *Catalog) ListPhotos(offset, limit int) []File {
 	return photos[offset:end]
 }
 
+type MediaQuery struct {
+	Kind       string
+	Sort       string
+	StorageIDs map[string]struct{}
+}
+
 func (c *Catalog) ListMedia(offset, limit int) []File {
+	return c.ListMediaQuery(offset, limit, MediaQuery{})
+}
+
+func (c *Catalog) ListMediaQuery(offset, limit int, query MediaQuery) []File {
 	if offset < 0 {
 		offset = 0
 	}
 	if limit <= 0 || limit > 500 {
 		limit = 80
 	}
-	c.mu.RLock()
-	items := make([]File, 0)
-	for _, file := range c.files {
-		if file.Kind == "image" || file.Kind == "video" || file.Kind == "audio" {
-			items = append(items, file)
-		}
-	}
-	c.mu.RUnlock()
-	sort.SliceStable(items, func(i, j int) bool {
-		if items[i].ModTime.Equal(items[j].ModTime) {
-			return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
-		}
-		return items[i].ModTime.After(items[j].ModTime)
-	})
+	items := c.mediaMatches(query)
 	if offset >= len(items) {
 		return nil
 	}
@@ -173,16 +170,98 @@ func (c *Catalog) ListMedia(offset, limit int) []File {
 }
 
 func (c *Catalog) MediaCount() int {
+	return c.MediaCountQuery(MediaQuery{})
+}
+
+func (c *Catalog) MediaCountQuery(query MediaQuery) int {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	count := 0
 	for _, file := range c.files {
-		if file.Kind == "image" || file.Kind == "video" || file.Kind == "audio" {
+		if mediaMatchesQuery(file, query) {
 			count++
 		}
 	}
 	return count
 }
+
+func (c *Catalog) mediaMatches(query MediaQuery) []File {
+	c.mu.RLock()
+	items := make([]File, 0)
+	for _, file := range c.files {
+		if mediaMatchesQuery(file, query) {
+			items = append(items, file)
+		}
+	}
+	c.mu.RUnlock()
+	sortMedia(items, query.Sort)
+	return items
+}
+
+func mediaMatchesQuery(file File, query MediaQuery) bool {
+	if file.Kind != "image" && file.Kind != "video" && file.Kind != "audio" {
+		return false
+	}
+	if query.Kind != "" && query.Kind != "all" && file.Kind != query.Kind {
+		return false
+	}
+	if query.StorageIDs != nil {
+		if _, ok := query.StorageIDs[file.StorageID]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func sortMedia(items []File, mode string) {
+	switch mode {
+	case "added-oldest":
+		sort.SliceStable(items, func(i, j int) bool {
+			if items[i].IndexedAt.Equal(items[j].IndexedAt) {
+				return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+			}
+			return items[i].IndexedAt.Before(items[j].IndexedAt)
+		})
+	case "file-oldest":
+		sort.SliceStable(items, func(i, j int) bool {
+			if items[i].ModTime.Equal(items[j].ModTime) {
+				return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+			}
+			return items[i].ModTime.Before(items[j].ModTime)
+		})
+	case "name-az":
+		sort.SliceStable(items, func(i, j int) bool {
+			left, right := strings.ToLower(items[i].Name), strings.ToLower(items[j].Name)
+			if left == right {
+				return items[i].ModTime.After(items[j].ModTime)
+			}
+			return left < right
+		})
+	case "name-za":
+		sort.SliceStable(items, func(i, j int) bool {
+			left, right := strings.ToLower(items[i].Name), strings.ToLower(items[j].Name)
+			if left == right {
+				return items[i].ModTime.After(items[j].ModTime)
+			}
+			return left > right
+		})
+	case "added-newest":
+		sort.SliceStable(items, func(i, j int) bool {
+			if items[i].IndexedAt.Equal(items[j].IndexedAt) {
+				return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+			}
+			return items[i].IndexedAt.After(items[j].IndexedAt)
+		})
+	default: // file-newest
+		sort.SliceStable(items, func(i, j int) bool {
+			if items[i].ModTime.Equal(items[j].ModTime) {
+				return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+			}
+			return items[i].ModTime.After(items[j].ModTime)
+		})
+	}
+}
+
 func (c *Catalog) FilesByStorage(storageID string) []File {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -222,7 +301,11 @@ func (c *Catalog) UpsertBatch(ctx context.Context, files []File) error {
 			return err
 		}
 		c.seq++
-		files[i].IndexedAt = time.Now().UTC()
+		if existing, ok := c.files[files[i].ID]; ok && !existing.IndexedAt.IsZero() {
+			files[i].IndexedAt = existing.IndexedAt
+		} else if files[i].IndexedAt.IsZero() {
+			files[i].IndexedAt = time.Now().UTC()
+		}
 		e := event{Seq: c.seq, Op: "upsert", File: &files[i]}
 		line, err := json.Marshal(e)
 		if err != nil {

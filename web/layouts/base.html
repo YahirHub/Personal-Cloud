@@ -7,6 +7,7 @@
   <meta name="color-scheme" content="light dark">
   <title>{{.Title}} · Nube personal</title>
   <meta name="description" content="{{.Description}}">
+  {{if .User}}<meta name="csrf-token" content="{{.CSRFToken}}">{{end}}
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/app.js" defer></script>
 </head>
@@ -15,6 +16,7 @@
   <main class="{{if .User}}app-main{{else}}auth-main{{end}}">
     {{template "content" .}}
   </main>
+  {{if .User}}{{template "download-context" .}}{{end}}
 </body>
 </html>
 {{end}}
