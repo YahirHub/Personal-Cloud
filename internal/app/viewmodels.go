@@ -35,7 +35,9 @@ type explorerItem struct {
 	IsDir        bool      `json:"is_dir"`
 	Offline      bool      `json:"offline"`
 	StorageName  string    `json:"storage_name"`
+	VirtualRoot  string    `json:"virtual_root,omitempty"`
 	Health       string    `json:"health,omitempty"`
+	Starred      bool      `json:"starred,omitempty"`
 }
 
 type breadcrumbItem struct {
@@ -44,13 +46,19 @@ type breadcrumbItem struct {
 }
 
 type explorerRoot struct {
-	Name       string
-	URL        string
-	Category   string
-	Status     string
-	FileCount  int
-	TotalBytes int64
-	Offline    bool
+	ID          string
+	Name        string
+	StorageName string
+	URL         string
+	Category    string
+	Status      string
+	FileCount   int
+	TotalBytes  int64
+	Capacity    uint64
+	Free        uint64
+	Mounted     bool
+	ReadOnly    bool
+	Offline     bool
 }
 
 type integrityUnitView struct {

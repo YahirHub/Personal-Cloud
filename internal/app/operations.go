@@ -202,6 +202,9 @@ func (a *App) elementsMovePost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.catalog.MoveCache(file.ID, movedFile.ID)
+		if err := a.store.MoveStarredFileID(r.Context(), file.ID, movedFile.ID); err != nil {
+			a.logger.Warn("archivo movido pero no se pudo migrar Destacados", "old_id", file.ID, "new_id", movedFile.ID, "error", err)
+		}
 		moved++
 	}
 	user := userFromContext(r.Context())
@@ -239,9 +242,126 @@ func (a *App) elementsDeletePost(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
 	}
+	if err := a.store.DeleteStarredFileIDs(r.Context(), catalogDeletes); err != nil {
+		a.logger.Warn("no se pudieron limpiar Destacados de archivos eliminados", "error", err)
+	}
 	user := userFromContext(r.Context())
 	_ = a.store.Audit(r.Context(), user.ID, "files_delete", fmt.Sprintf("correcto:%d", deleted), a.clientIP(r))
 	writeJSON(w, map[string]any{"ok": true, "deleted": deleted})
+}
+
+func (a *App) fileStarPost(w http.ResponseWriter, r *http.Request) {
+	if !a.validCSRFValue(r, r.Header.Get("X-CSRF-Token")) {
+		writeJSONError(w, errors.New("la sesión del formulario no es válida"), http.StatusBadRequest)
+		return
+	}
+	user := userFromContext(r.Context())
+	if user == nil {
+		writeJSONError(w, errors.New("sesión no válida"), http.StatusUnauthorized)
+		return
+	}
+	id := strings.TrimSpace(r.PathValue("id"))
+	if _, ok := a.catalog.ByID(id); !ok {
+		http.NotFound(w, r)
+		return
+	}
+	starred := true
+	if err := r.ParseForm(); err == nil {
+		if raw := strings.TrimSpace(r.FormValue("starred")); raw != "" {
+			value, err := strconv.ParseBool(raw)
+			if err != nil {
+				writeJSONError(w, errors.New("valor starred inválido"), http.StatusBadRequest)
+				return
+			}
+			starred = value
+		}
+	}
+	if err := a.store.SetFileStarred(r.Context(), user.ID, id, starred); err != nil {
+		writeJSONError(w, err, http.StatusInternalServerError)
+		return
+	}
+	_ = a.store.Audit(r.Context(), user.ID, "file_star", fmt.Sprintf("%s:%s", id, strconv.FormatBool(starred)), a.clientIP(r))
+	writeJSON(w, map[string]any{"ok": true, "starred": starred})
+}
+
+func (a *App) fileRenamePost(w http.ResponseWriter, r *http.Request) {
+	if !a.validCSRFValue(r, r.Header.Get("X-CSRF-Token")) {
+		writeJSONError(w, errors.New("la sesión del formulario no es válida"), http.StatusBadRequest)
+		return
+	}
+	if !a.allowBulkAction(w, r, "rename") {
+		return
+	}
+	id := strings.TrimSpace(r.PathValue("id"))
+	file, ok := a.catalog.ByID(id)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		writeJSONError(w, errors.New("solicitud inválida"), http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\\\x00") {
+		writeJSONError(w, errors.New("nombre de archivo inválido"), http.StatusBadRequest)
+		return
+	}
+	if name == file.Name {
+		writeJSON(w, map[string]any{"ok": true, "id": file.ID, "name": file.Name})
+		return
+	}
+	cfg, err := a.store.StorageVolumeByID(r.Context(), file.StorageID)
+	if err != nil {
+		writeJSONError(w, errors.New("unidad del archivo no válida"), http.StatusConflict)
+		return
+	}
+	if cfg.ReadOnly || !a.storageOnline(r, file.StorageID) {
+		writeJSONError(w, errors.New("la unidad del archivo no está disponible para escritura"), http.StatusConflict)
+		return
+	}
+	oldRel := filepath.ToSlash(file.RelativePath)
+	parent := path.Dir(oldRel)
+	if parent == "." {
+		parent = ""
+	}
+	newRel := name
+	if parent != "" {
+		newRel = path.Join(parent, name)
+	}
+	from := path.Join("/", file.VirtualRoot, oldRel)
+	to := path.Join("/", file.VirtualRoot, newRel)
+	if _, err := a.vfs.Stat(r.Context(), to); err == nil {
+		writeJSONError(w, fmt.Errorf("ya existe %s en esta carpeta", name), http.StatusConflict)
+		return
+	} else if !errors.Is(err, os.ErrNotExist) {
+		writeJSONError(w, fmt.Errorf("comprobar destino: %w", err), http.StatusConflict)
+		return
+	}
+	entry, err := a.vfs.MoveFile(r.Context(), from, to, false)
+	if err != nil {
+		writeJSONError(w, fmt.Errorf("renombrar archivo: %w", err), http.StatusConflict)
+		return
+	}
+	moved := file
+	moved.ID = catalog.StableID(file.StorageID, filepath.FromSlash(newRel))
+	moved.RelativePath = filepath.ToSlash(newRel)
+	moved.Name = entry.Name
+	moved.ModTime = entry.ModTime.UTC()
+	if err := a.catalog.MoveEntry(r.Context(), file.ID, moved); err != nil {
+		a.logger.Error("archivo renombrado físicamente pero catálogo no actualizado", "old_id", file.ID, "new_id", moved.ID, "error", err)
+		writeJSONError(w, errors.New("el archivo se renombró físicamente pero el catálogo requiere sincronización"), http.StatusInternalServerError)
+		return
+	}
+	a.catalog.MoveCache(file.ID, moved.ID)
+	if err := a.store.MoveStarredFileID(r.Context(), file.ID, moved.ID); err != nil {
+		a.logger.Warn("no se pudo conservar Destacados al renombrar", "old_id", file.ID, "new_id", moved.ID, "error", err)
+	}
+	user := userFromContext(r.Context())
+	if user != nil {
+		_ = a.store.Audit(r.Context(), user.ID, "file_rename", fmt.Sprintf("%s -> %s", file.Name, moved.Name), a.clientIP(r))
+	}
+	writeJSON(w, map[string]any{"ok": true, "id": moved.ID, "name": moved.Name})
 }
 
 func (a *App) batchDownloadTicketPost(w http.ResponseWriter, r *http.Request) {
@@ -401,6 +521,10 @@ func (a *App) forgetMissingFile(ctx context.Context, file catalog.File) {
 	a.catalog.RemoveCache(file)
 	if err := a.catalog.DeleteIDs(ctx, []string{file.ID}); err != nil {
 		a.logger.Warn("no se pudo retirar archivo faltante del catálogo", "file_id", file.ID, "error", err)
+		return
+	}
+	if err := a.store.DeleteStarredFileIDs(ctx, []string{file.ID}); err != nil {
+		a.logger.Warn("no se pudo limpiar Destacados del archivo faltante", "file_id", file.ID, "error", err)
 	}
 }
 

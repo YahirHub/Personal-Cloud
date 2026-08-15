@@ -14,9 +14,15 @@ Implementado:
 - CSRF y rate limit reutilizable.
 - Rate limit de login por IP y usuario.
 - URLs amigables y frontend con layout/componentes reutilizables.
-- Interfaz oscura inspirada estrechamente en Google Drive: topbar, búsqueda, navegación lateral, botón Nuevo, página principal con sugeridos y Mi unidad con cuadrícula/lista, manteniendo identidad propia y assets locales.
+- Interfaz oscura inspirada estrechamente en Google Drive: topbar, búsqueda, navegación lateral, botón Nuevo, página principal con carpetas/archivos sugeridos en cuadrícula o lista y Mi unidad con cuadrícula/lista, manteniendo identidad propia y assets locales.
+- Los menús `⋯` de las unidades son reales: permiten abrir, consultar propiedades/estado/capacidad, actualizar el catálogo, montar bajo demanda y saltar a la administración de almacenamiento.
+- Los menús de archivo incluyen abrir, descargar, información, agregar/quitar de Destacados, renombrar, mover y eliminar; la información sigue disponible desde el catálogo aunque el original esté temporalmente offline.
+- `Recientes` y `Destacados` son vistas reales. Los destacados se guardan por usuario y siguen al archivo si se renombra o mueve desde el panel.
+- El botón `Nuevo` abre un menú estilo Drive con **Nueva carpeta** y **Subir archivo**; Mi unidad también admite drag & drop directo sobre la carpeta actual.
+- Mi unidad, búsqueda, Recientes y Destacados tienen filtros funcionales por tipo y fecha de modificación; las vistas globales también pueden filtrar por unidad/fuente. Los filtros se conservan al alternar paginación/scroll continuo.
 - Búsqueda global local por nombre/ruta desde la barra superior, sin montar unidades para consultar el catálogo.
 - Detección de volúmenes Windows y Linux con identidad persistente independiente de letra, nombre o punto de montaje.
+- Reconexión tolerante a cambios de identidad del SO: primero coincide por ID persistente y, cuando éste cambió, usa el identificador de hardware únicamente si la coincidencia es inequívoca; la nueva identidad se persiste automáticamente. Las lecturas hacen una segunda detección breve para cubrir la ventana en que el SO acaba de anunciar un disco reconectado.
 - Windows conserva Volume GUID + serial del filesystem; Linux prioriza UUID y conserva PARTUUID/by-id como respaldo de identidad.
 - Registro de unidades con nombre, categoría, raíz virtual, solo lectura y timeout de inactividad.
 - VFS que unifica todas las unidades registradas sin exponer rutas físicas.
@@ -24,7 +30,7 @@ Implementado:
 - Auto-desmontaje por inactividad.
 - Catálogo persistente separado del estado de autenticación.
 - Indexación de archivos con una sola cola para minimizar actividad simultánea sobre HDD y progreso real procesados/total en tiempo real.
-- Miniaturas de hasta 320 px y previews de hasta 1600 px para JPEG/PNG/GIF; se respeta EXIF Orientation y FFmpeg amplía formatos de imagen cuando está disponible.
+- Miniaturas de hasta 320 px y previews de hasta 1600 px para JPEG/PNG/GIF; se respeta EXIF Orientation y FFmpeg amplía formatos de imagen cuando está disponible. La caché de imágenes está versionada y las miniaturas antiguas se regeneran de forma perezosa al primer acceso, evitando que el navegador conserve una orientación obsoleta.
 - Galería `/galeria` que usa la caché interna aunque el disco original esté desmontado y oculta medios de unidades físicamente desconectadas.
 - Filtro compacto por imágenes/video/audio y orden por fecha de archivo, fecha de incorporación o nombre.
 - Visor offline de imagen/video/audio centrado a viewport completo, con navegación ←/→ o A/D, zoom suave W/S y reproductor de video con controles inferiores propios (play, seek, volumen, velocidad, calidad y fullscreen).
@@ -89,7 +95,7 @@ archivo virtual
  -> desmontar
 ```
 
-Ver una miniatura o preview no requiere montar el disco original.
+Ver una miniatura o preview con caché vigente no requiere montar el disco original; tras una actualización de la lógica de imagen, una caché antigua puede renovarse una sola vez desde el original cuando la unidad esté disponible.
 
 ## Requisitos
 

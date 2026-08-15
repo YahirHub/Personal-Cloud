@@ -2,7 +2,7 @@
 <section class="page drive-page drive-home-page">
   <header class="drive-page-titlebar">
     <h1>Te damos la bienvenida a Nube</h1>
-    <span class="drive-title-info" title="Tu almacenamiento personal">{{template "icon-info" .}}</span>
+    <span class="drive-title-info" title="Información de tu almacenamiento">{{template "icon-info" .}}</span>
   </header>
 
   {{if .HomeFolders}}
@@ -12,11 +12,13 @@
     </div>
     <div class="drive-suggested-folders">
       {{range .HomeFolders}}
-      <a class="drive-folder-chip{{if .Offline}} is-offline{{end}}" href="{{.URL}}" data-offline="{{.Offline}}">
-        <span class="drive-folder-icon">{{template "icon-folder" $}}</span>
-        <span class="drive-folder-copy"><strong>{{.Name}}</strong><small>{{if .Offline}}No disponible · catálogo local{{else}}en Mi unidad{{end}}</small></span>
-        <span class="drive-card-more" aria-hidden="true">⋮</span>
-      </a>
+      <article class="drive-folder-unit{{if .Offline}} is-offline{{end}}">
+        <a class="drive-folder-chip" href="{{.URL}}" data-offline="{{.Offline}}">
+          <span class="drive-folder-icon">{{template "icon-folder" $}}</span>
+          <span class="drive-folder-copy"><strong>{{.Name}}</strong><small>{{if .Offline}}No disponible · catálogo local{{else}}en Mi unidad{{end}}</small></span>
+        </a>
+        <button class="drive-more-button drive-unit-more" type="button" data-unit-actions="{{.ID}}" data-unit-url="{{.URL}}" aria-label="Más acciones para {{.Name}}" title="Más acciones">{{template "icon-more" $}}</button>
+      </article>
       {{end}}
     </div>
   </section>
@@ -35,17 +37,21 @@
 
     {{if .HomeFiles}}
     <div class="drive-home-files is-grid" data-home-files>
+      <div class="drive-home-list-header" aria-hidden="true"><span>Nombre</span><span>Motivo sugerido</span><span>Propietario</span><span>Ubicación</span><span></span></div>
       {{range .HomeFiles}}
       <article class="drive-home-file-card{{if .Offline}} is-offline{{end}}{{if eq .Health "damaged"}} is-damaged{{end}}" data-download-file-id="{{.ID}}" data-offline="{{.Offline}}">
         <div class="drive-home-file-head">
           <span class="drive-kind-icon drive-kind-{{.Kind}}">{{if eq .Kind "image"}}{{template "icon-image" $}}{{else if eq .Kind "video"}}{{template "icon-video" $}}{{else if eq .Kind "audio"}}{{template "icon-audio" $}}{{else}}{{template "icon-files" $}}{{end}}</span>
-          <strong title="{{.Name}}">{{.Name}}</strong>
-          <button class="drive-more-button" type="button" data-file-actions="{{.ID}}" aria-label="Más acciones para {{.Name}}" title="Más acciones">{{template "icon-more" $}}</button>
+          <a class="drive-home-file-name" href="{{.OpenURL}}" title="{{.Name}}">{{.Name}}</a>
         </div>
         <a class="drive-home-file-preview" href="{{.OpenURL}}" aria-label="Abrir {{.Name}}">
           {{if .ThumbnailURL}}<img src="{{.ThumbnailURL}}" alt="" loading="lazy">{{else}}<span class="drive-preview-placeholder drive-kind-{{.Kind}}">{{if eq .Kind "image"}}{{template "icon-image" $}}{{else if eq .Kind "video"}}{{template "icon-video" $}}{{else if eq .Kind "audio"}}{{template "icon-audio" $}}{{else}}{{template "icon-files" $}}{{end}}</span>{{end}}
         </a>
-        <div class="drive-home-file-meta"><span>{{if .Offline}}No disponible{{else}}Modificado {{formatTime .ModTime}}{{end}}</span><span>{{formatBytes .Size}}</span></div>
+        <div class="drive-home-file-meta"><span class="drive-home-file-activity"><span class="drive-owner-avatar">yo</span><span>{{if .Offline}}Unidad no disponible{{else}}Lo modificaste · {{formatTime .ModTime}}{{end}}</span></span></div>
+        <span class="drive-home-file-reason">{{if .Offline}}No disponible{{else}}Lo modificaste · {{formatTime .ModTime}}{{end}}</span>
+        <span class="drive-home-file-owner"><span class="drive-owner-avatar">yo</span> {{$.User.Username}}</span>
+        <span class="drive-home-file-location">{{template "icon-folder" $}} {{.VirtualRoot}}</span>
+        <button class="drive-more-button drive-home-file-more" type="button" data-file-actions="{{.ID}}" aria-label="Más acciones para {{.Name}}" title="Más acciones">{{template "icon-more" $}}</button>
       </article>
       {{end}}
     </div>

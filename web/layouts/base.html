@@ -16,7 +16,7 @@
     {{template "topbar" .}}
     {{template "sidebar" .}}
     <main class="app-main">{{template "content" .}}</main>
-    {{template "download-context" .}}{{template "selection-menu" .}}
+    {{template "download-context" .}}{{template "selection-menu" .}}{{template "unit-context" .}}{{template "new-context" .}}
   {{else}}
     <main class="auth-main">{{template "content" .}}</main>
   {{end}}

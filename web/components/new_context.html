@@ -1,0 +1,7 @@
+{{define "new-context"}}
+<div class="context-menu drive-new-menu" data-new-menu hidden role="menu" aria-label="Crear o subir">
+  <button type="button" role="menuitem" data-new-folder>{{template "icon-folder-plus" .}}<span>Nueva carpeta</span></button>
+  <div class="context-menu-separator" aria-hidden="true"></div>
+  <button type="button" role="menuitem" data-new-upload>{{template "icon-upload" .}}<span>Subir archivo</span></button>
+</div>
+{{end}}

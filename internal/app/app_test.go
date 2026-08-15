@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -398,6 +399,190 @@ func TestSettingsExposeIntegrityAndFolderPicker(t *testing.T) {
 	for _, want := range []string{"data-folder-picker", "data-create-folder", "data-move-root", "data-select-icon=\"video\""} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("UI cloud sin %q", want)
+		}
+	}
+}
+
+func TestDriveRootUnitActionsAreFunctionalControls(t *testing.T) {
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := store.User{Username: "admin", Role: "admin"}
+	data := pageData{
+		Title: "Archivos", CurrentPath: "/archivos", User: &user, CSRFToken: "csrf",
+		ExplorerPath: "/", ListingMode: "infinito",
+		ExplorerRoots: []explorerRoot{{ID: "volume-1", Name: "Clase A", URL: "/archivos/ver/Clase-A", Category: "mixed", Status: "Montada", FileCount: 12}},
+	}
+	var out bytes.Buffer
+	if err := renderer.Render(&out, "files", data); err != nil {
+		t.Fatal(err)
+	}
+	html := out.String()
+	for _, want := range []string{`data-unit-actions="volume-1"`, `data-unit-info`, `data-unit-index`, `data-unit-mount`, `data-unit-dialog`} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("Mi unidad no expone control funcional %q", want)
+		}
+	}
+	if strings.Contains(html, `<span class="drive-card-more"`) {
+		t.Fatal("Mi unidad no debe volver a renderizar tres puntos decorativos")
+	}
+}
+
+func TestDashboardMatchesDriveSuggestedLayout(t *testing.T) {
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := store.User{Username: "admin", Role: "admin"}
+	data := pageData{
+		Title: "Inicio", CurrentPath: "/inicio", User: &user, CSRFToken: "csrf",
+		HomeFolders: []explorerRoot{{ID: "v1", Name: "Documentos", URL: "/archivos/ver/Documentos"}},
+		HomeFiles:   []homeFileItem{{ID: "f1", Name: "tarea.pdf", Kind: "document", VirtualRoot: "Documentos", OpenURL: "/archivo/f1/original"}},
+	}
+	var out bytes.Buffer
+	if err := renderer.Render(&out, "dashboard", data); err != nil {
+		t.Fatal(err)
+	}
+	html := out.String()
+	for _, want := range []string{"Te damos la bienvenida a Nube", "Carpetas sugeridas", "Archivos sugeridos", "Motivo sugerido", "Propietario", "Ubicación", `data-home-view="grid"`, `data-home-view="list"`} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("página principal Drive incompleta: falta %q", want)
+		}
+	}
+}
+
+func TestCatalogCacheURLForcesCurrentImageVersion(t *testing.T) {
+	file := catalog.File{ID: "img-1", Kind: "image", CacheVersion: catalog.ImageCacheVersion - 1}
+	got := catalogCacheURL(file, "miniatura")
+	want := fmt.Sprintf("/galeria/img-1/miniatura?v=%d", catalog.ImageCacheVersion)
+	if got != want {
+		t.Fatalf("cache url=%q, quiero %q", got, want)
+	}
+}
+
+func TestFileContextMenuIncludesInformationAndOfflineSafeActions(t *testing.T) {
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := store.User{Username: "admin", Role: "admin"}
+	var out bytes.Buffer
+	if err := renderer.Render(&out, "dashboard", pageData{Title: "Inicio", CurrentPath: "/inicio", User: &user, CSRFToken: "csrf"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`data-context-open`, `data-context-info`, `data-file-info-dialog`, `data-requires-online`} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("menú de archivo incompleto: falta %q", want)
+		}
+	}
+}
+
+func TestDriveShellExposesRealRecentStarredAndNewActions(t *testing.T) {
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := store.User{Username: "admin", Role: "admin"}
+	data := pageData{
+		Title: "Archivos", CurrentPath: "/archivos", User: &user, CSRFToken: "csrf",
+		ExplorerPath: "/", ExplorerCanWrite: true, ListingMode: "infinito",
+		MoveDestinations: []moveDestination{{Name: "Clase A", VirtualRoot: "Clase-A", Online: true}},
+	}
+	var out bytes.Buffer
+	if err := renderer.Render(&out, "files", data); err != nil {
+		t.Fatal(err)
+	}
+	html := out.String()
+	for _, want := range []string{
+		`href="/recientes"`, `href="/destacados"`, `data-global-new`, `data-new-menu`,
+		`data-new-folder-dialog`, `data-new-folder-form`, `data-drop-overlay`,
+		`data-context-star`, `data-context-rename`, `data-rename-dialog`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("shell Drive incompleto: falta %q", want)
+		}
+	}
+}
+
+func TestDriveFileCollectionRendersAsRealList(t *testing.T) {
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := store.User{Username: "admin", Role: "admin"}
+	data := pageData{
+		Title: "Destacados", CurrentPath: "/starred", User: &user, CSRFToken: "csrf",
+		ExplorerPath: "/", ListingMode: "infinito", FileCollection: "starred",
+		FileCollectionTitle: "Destacados", FileCollectionSubtitle: "Tus archivos marcados como destacados",
+		ExplorerItems: []explorerItem{{ID: "f1", Name: "tarea.pdf", Kind: "document", DownloadURL: "/archivo/f1/original", Starred: true}},
+	}
+	var out bytes.Buffer
+	if err := renderer.Render(&out, "files", data); err != nil {
+		t.Fatal(err)
+	}
+	html := out.String()
+	for _, want := range []string{"Destacados", "tarea.pdf", `data-starred="true"`, `data-file-view="grid"`, `data-file-view="list"`} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("colección Drive incompleta: falta %q", want)
+		}
+	}
+}
+
+func TestExplorerFiltersAreFunctional(t *testing.T) {
+	now := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
+	items := []explorerItem{
+		{Name: "Foto.jpg", Kind: "image", VirtualRoot: "Clase-A", ModTime: now.Add(-2 * time.Hour)},
+		{Name: "Tarea.pdf", Kind: "document", VirtualRoot: "Clase-A", ModTime: now.Add(-10 * 24 * time.Hour)},
+		{Name: "Video.mp4", Kind: "video", VirtualRoot: "Clase-B", ModTime: now.Add(-3 * 24 * time.Hour)},
+		{Name: "Carpeta", Kind: "folder", VirtualRoot: "Clase-A", IsDir: true},
+	}
+	got := applyExplorerFilter(items, explorerFilter{Kind: "image", Modified: "7d", Source: "clase-a"}, now)
+	if len(got) != 1 || got[0].Name != "Foto.jpg" {
+		t.Fatalf("filtro combinado inesperado: %#v", got)
+	}
+	got = applyExplorerFilter(items, explorerFilter{Modified: "7d"}, now)
+	if len(got) != 2 {
+		t.Fatalf("filtro temporal debe devolver 2 archivos, obtuvo %d", len(got))
+	}
+}
+
+func TestDriveFileFiltersRenderAsRealSelects(t *testing.T) {
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := store.User{Username: "admin", Role: "admin"}
+	data := pageData{
+		Title: "Destacados", CurrentPath: "/starred", User: &user, CSRFToken: "csrf",
+		ExplorerPath: "/", ListingMode: "infinito", FileCollection: "starred",
+		FileCollectionTitle: "Destacados", FileFilterAction: "/destacados", FileTypeFilter: "image", FileFilterCount: 1,
+		MoveDestinations: []moveDestination{{Name: "Clase A", VirtualRoot: "Clase-A", Online: true}},
+		ExplorerItems:    []explorerItem{{ID: "f1", Name: "foto.jpg", Kind: "image", DownloadURL: "/archivo/f1/original"}},
+	}
+	var out bytes.Buffer
+	if err := renderer.Render(&out, "files", data); err != nil {
+		t.Fatal(err)
+	}
+	html := out.String()
+	for _, want := range []string{`data-file-filter-form`, `name="tipo"`, `name="modificado"`, `name="fuente"`, `data-clear-file-filters`, `value="image" selected`} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("filtros Drive incompletos: falta %q", want)
+		}
+	}
+}
+
+func TestFileListingURLPreservesDriveFilters(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/archivos/ver/Clase-A?tipo=image&modificado=7d&fuente=Clase-A&pagina=4", nil)
+	got := fileListingURL(req, "paginas", 2)
+	parsed, err := url.Parse(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := parsed.Query()
+	for key, want := range map[string]string{"tipo": "image", "modificado": "7d", "fuente": "Clase-A", "modo": "paginas", "pagina": "2"} {
+		if query.Get(key) != want {
+			t.Fatalf("%s=%q, quiero %q en %q", key, query.Get(key), want, got)
 		}
 	}
 }

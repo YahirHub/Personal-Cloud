@@ -1,14 +1,14 @@
 {{define "content"}}
-<section class="page drive-page drive-files-page" data-drive-files-page>
+<section class="page drive-page drive-files-page" data-drive-files-page data-upload-drop="{{if and .ExplorerCanWrite (not .FileCollection)}}true{{else}}false{{end}}" data-current-path="{{.ExplorerPath}}">
   <header class="drive-files-header">
     <nav class="drive-breadcrumb-title" aria-label="Ruta">
       {{range $i, $crumb := .Breadcrumbs}}{{if $i}}<span class="drive-breadcrumb-separator">{{template "icon-chevron-right" $}}</span>{{end}}<a href="{{$crumb.URL}}">{{$crumb.Name}}</a>{{end}}
     </nav>
     <div class="drive-files-actions">
       {{if and (ne .ExplorerPath "/") (not .SearchMode)}}{{template "listing-controls" .}}{{end}}
-      {{if or (ne .ExplorerPath "/") .SearchMode}}<button class="icon-button" type="button" data-open-selection-menu aria-label="Opciones de selección" title="Opciones de selección">{{template "icon-more" .}}</button>{{end}}
-      {{if .ExplorerCanWrite}}<button class="button button-secondary drive-upload-inline" type="button" data-open-upload>{{template "icon-upload" .}} Subir aquí</button>{{end}}
-      {{if or (ne .ExplorerPath "/") .SearchMode}}
+      {{if or (or (ne .ExplorerPath "/") .SearchMode) .FileCollection}}<button class="icon-button" type="button" data-open-selection-menu aria-label="Opciones de selección" title="Opciones de selección">{{template "icon-more" .}}</button>{{end}}
+      {{if and .ExplorerCanWrite (not .FileCollection)}}<button class="button button-secondary drive-upload-inline" type="button" data-open-upload>{{template "icon-upload" .}} Subir aquí</button>{{end}}
+      {{if or (or (ne .ExplorerPath "/") .SearchMode) .FileCollection}}
       <div class="drive-view-toggle" role="group" aria-label="Vista de archivos">
         <button class="drive-view-button" type="button" data-file-view="list" aria-label="Vista de lista" title="Lista">{{template "icon-list" .}}</button>
         <button class="drive-view-button active" type="button" data-file-view="grid" aria-label="Vista de cuadrícula" title="Cuadrícula">{{template "icon-grid" .}}</button>
@@ -20,7 +20,52 @@
 
   {{if .Info}}<div class="alert alert-success">{{.Info}}</div>{{end}}{{if .Error}}<div class="alert alert-error">{{.Error}}</div>{{end}}{{if .StorageError}}<div class="alert">La detección del sistema reportó: {{.StorageError}}</div>{{end}}
 
-  {{if .SearchMode}}
+  {{if or (or (ne .ExplorerPath "/") .SearchMode) .FileCollection}}
+  <form class="drive-filter-row" method="get" action="{{.FileFilterAction}}" data-file-filter-form>
+    {{if .SearchMode}}<input type="hidden" name="q" value="{{.SearchQuery}}">{{end}}
+    <label class="drive-filter-select">
+      <span class="sr-only">Tipo</span>
+      <select name="tipo" aria-label="Filtrar por tipo" data-file-filter>
+        <option value=""{{if eq .FileTypeFilter ""}} selected{{end}}>Tipo</option>
+        <option value="image"{{if eq .FileTypeFilter "image"}} selected{{end}}>Imágenes</option>
+        <option value="video"{{if eq .FileTypeFilter "video"}} selected{{end}}>Videos</option>
+        <option value="audio"{{if eq .FileTypeFilter "audio"}} selected{{end}}>Audio</option>
+        <option value="document"{{if eq .FileTypeFilter "document"}} selected{{end}}>Documentos</option>
+        <option value="archive"{{if eq .FileTypeFilter "archive"}} selected{{end}}>Comprimidos</option>
+        <option value="other"{{if eq .FileTypeFilter "other"}} selected{{end}}>Otros</option>
+      </select>
+    </label>
+    <label class="drive-filter-select">
+      <span class="sr-only">Modificado</span>
+      <select name="modificado" aria-label="Filtrar por fecha de modificación" data-file-filter>
+        <option value=""{{if eq .FileModifiedFilter ""}} selected{{end}}>Modificado</option>
+        <option value="today"{{if eq .FileModifiedFilter "today"}} selected{{end}}>Últimas 24 horas</option>
+        <option value="7d"{{if eq .FileModifiedFilter "7d"}} selected{{end}}>Últimos 7 días</option>
+        <option value="30d"{{if eq .FileModifiedFilter "30d"}} selected{{end}}>Últimos 30 días</option>
+        <option value="year"{{if eq .FileModifiedFilter "year"}} selected{{end}}>Último año</option>
+      </select>
+    </label>
+    {{if not .ExplorerRoot}}
+    <label class="drive-filter-select">
+      <span class="sr-only">Fuente</span>
+      <select name="fuente" aria-label="Filtrar por unidad" data-file-filter>
+        <option value=""{{if eq .FileSourceFilter ""}} selected{{end}}>Fuente</option>
+        {{range .MoveDestinations}}<option value="{{.VirtualRoot}}"{{if eq $.FileSourceFilter .VirtualRoot}} selected{{end}}>{{.Name}}</option>{{end}}
+      </select>
+    </label>
+    {{end}}
+    {{if gt .FileFilterCount 0}}<button class="drive-filter-clear" type="button" data-clear-file-filters>Limpiar filtros</button>{{end}}
+  </form>
+  {{end}}
+
+  {{if .FileCollection}}
+    <div class="drive-search-results-heading"><h2>{{.FileCollectionTitle}}</h2><small>{{.FileCollectionSubtitle}}</small></div>
+    {{if .ExplorerItems}}
+      {{template "drive-file-list" .}}
+    {{else}}
+      <div class="drive-empty-inline"><span class="drive-empty-icon">{{if eq .FileCollection "starred"}}{{template "icon-star" .}}{{else}}{{template "icon-recent" .}}{{end}}</span><div><strong>{{if eq .FileCollection "starred"}}No hay archivos destacados{{else}}No hay archivos recientes{{end}}</strong><small>{{if eq .FileCollection "starred"}}Usa el menú de tres puntos de un archivo para agregarlo a Destacados.{{else}}Tus archivos aparecerán aquí cuando el catálogo tenga contenido.{{end}}</small></div></div>
+    {{end}}
+  {{else if .SearchMode}}
     <div class="drive-search-results-heading"><h2>Resultados para “{{.SearchQuery}}”</h2><small>{{if .ExplorerItems}}Coincidencias por nombre o ubicación{{else}}No se encontraron coincidencias{{end}}</small></div>
     {{if .ExplorerItems}}
       {{template "drive-file-list" .}}
@@ -30,7 +75,7 @@
   {{else if eq .ExplorerPath "/"}}
     {{if .ExplorerRoots}}
       <div class="drive-content-label">Carpetas</div>
-      <div class="file-root-grid">{{range .ExplorerRoots}}<a class="file-root-card{{if .Offline}} is-offline{{end}}" href="{{.URL}}" data-offline="{{.Offline}}"{{if .Offline}} title="Unidad no disponible; puedes seguir explorando el catálogo local"{{end}}><span class="file-root-icon">{{template "icon-folder" $}}</span><span class="file-root-copy"><strong>{{.Name}}</strong><small>{{if .Offline}}No disponible · catálogo local{{else}}{{categoryLabel .Category}} · {{.FileCount}} archivos{{end}}</small></span><span class="drive-card-more" aria-hidden="true">⋮</span></a>{{end}}</div>
+      <div class="file-root-grid">{{range .ExplorerRoots}}<article class="file-root-card{{if .Offline}} is-offline{{end}}" data-offline="{{.Offline}}"><a class="file-root-link" href="{{.URL}}"{{if .Offline}} title="Unidad no disponible; puedes seguir explorando el catálogo local"{{end}}><span class="file-root-icon">{{template "icon-folder" $}}</span><span class="file-root-copy"><strong>{{.Name}}</strong><small>{{if .Offline}}No disponible · catálogo local{{else}}{{categoryLabel .Category}} · {{.FileCount}} archivos{{end}}</small></span></a><button class="drive-more-button drive-unit-more" type="button" data-unit-actions="{{.ID}}" data-unit-url="{{.URL}}" aria-label="Más acciones para {{.Name}}" title="Más acciones">{{template "icon-more" $}}</button></article>{{end}}</div>
     {{else}}
       <div class="empty-state"><div class="empty-icon">{{template "icon-folder" .}}</div><h2>No hay unidades registradas</h2><p>Registra una unidad desde Almacenamiento. La primera indexación comenzará automáticamente.</p><p><a class="button button-primary" href="/almacenamiento">Ir a Almacenamiento</a></p></div>
     {{end}}
@@ -42,11 +87,28 @@
       <div class="empty-state compact-empty"><div class="empty-icon">{{template "icon-folder" .}}</div><h2>Esta carpeta está vacía</h2><p>Si acabas de modificar la unidad, ejecuta una indexación desde Almacenamiento.</p></div>
     {{end}}
   {{end}}
+  {{if and .ExplorerCanWrite (not .FileCollection)}}<div class="drive-drop-overlay" data-drop-overlay hidden><div>{{template "icon-upload" .}}<strong>Suelta los archivos para subirlos</strong><small>Se guardarán en esta ubicación</small></div></div>{{end}}
 </section>
 
 {{template "bulk-actions" .}}
 
 {{if .ExplorerCanWrite}}
+<dialog class="upload-dialog drive-folder-dialog" data-new-folder-dialog>
+  <form class="dialog-card" data-new-folder-form>
+    <div class="dialog-head"><div><div class="eyebrow">Nuevo</div><h2>Nueva carpeta</h2></div><button class="icon-button" type="button" data-close-new-folder aria-label="Cerrar">{{template "icon-close" .}}</button></div>
+    {{if .ExplorerRoot}}
+      <input type="hidden" name="destination_root" value="{{.ExplorerRoot}}">
+      <input type="hidden" name="parent" value="{{.ExplorerRelative}}">
+      <div class="drive-folder-destination"><small>Ubicación</small><strong>/{{.ExplorerRoot}}{{if .ExplorerRelative}}/{{.ExplorerRelative}}{{end}}</strong></div>
+    {{else}}
+      <label>Unidad<select name="destination_root" required><option value="">Selecciona una unidad</option>{{range .MoveDestinations}}{{if and .Online (not .ReadOnly)}}<option value="{{.VirtualRoot}}">{{.Name}} · /{{.VirtualRoot}}</option>{{end}}{{end}}</select></label>
+      <input type="hidden" name="parent" value="">
+    {{end}}
+    <label>Nombre<input type="text" name="name" maxlength="120" required autocomplete="off" placeholder="Carpeta sin título"></label>
+    <div class="dialog-actions"><button class="button button-ghost" type="button" data-cancel-new-folder>Cancelar</button><button class="button button-primary" type="submit">Crear</button></div>
+  </form>
+</dialog>
+
 <dialog class="upload-dialog" data-upload-dialog>
   <form method="post" action="/archivos/subir" enctype="multipart/form-data" class="dialog-card">
     <div class="dialog-head"><div><div class="eyebrow">Nuevo</div><h2>{{if eq .ExplorerPath "/"}}Subir a Mi unidad{{else}}Subir a {{.ExplorerPath}}{{end}}</h2></div><button class="icon-button" type="button" data-close-upload aria-label="Cerrar">{{template "icon-close" .}}</button></div>
@@ -67,7 +129,7 @@
       <span class="file-main"><strong>{{.Name}}</strong><small>Carpeta{{if .Offline}} · unidad no disponible{{end}}</small></span><span class="file-size">—</span>
     </a>
     {{else}}
-    <a class="file-row{{if .Offline}} is-offline{{end}}{{if eq .Health "damaged"}} is-damaged{{end}}" href="{{.DownloadURL}}" role="listitem" data-selectable-file="{{.ID}}" data-download-file-id="{{.ID}}" data-offline="{{.Offline}}">
+    <a class="file-row{{if .Offline}} is-offline{{end}}{{if eq .Health "damaged"}} is-damaged{{end}}" href="{{.DownloadURL}}" role="listitem" data-selectable-file="{{.ID}}" data-download-file-id="{{.ID}}" data-offline="{{.Offline}}" data-starred="{{.Starred}}">
       <span class="selection-check file-selection-check" aria-hidden="true">{{template "icon-check" $}}</span>
       <span class="file-card-preview">{{if .ThumbnailURL}}<img src="{{.ThumbnailURL}}" alt="" loading="lazy">{{else}}<span class="drive-preview-placeholder drive-kind-{{.Kind}}">{{if eq .Kind "image"}}{{template "icon-image" $}}{{else if eq .Kind "video"}}{{template "icon-video" $}}{{else if eq .Kind "audio"}}{{template "icon-audio" $}}{{else}}{{template "icon-files" $}}{{end}}</span>{{end}}</span>
       <span class="file-kind drive-kind-{{.Kind}}">{{if eq .Kind "image"}}{{template "icon-image" $}}{{else if eq .Kind "video"}}{{template "icon-video" $}}{{else if eq .Kind "audio"}}{{template "icon-audio" $}}{{else}}{{template "icon-files" $}}{{end}}</span>

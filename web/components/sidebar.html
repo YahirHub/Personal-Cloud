@@ -1,9 +1,11 @@
 {{define "sidebar"}}
 <aside class="sidebar">
-  <a class="drive-new-button" href="/archivos?nuevo=1" data-global-new>{{template "icon-plus" .}}<span>Nuevo</span></a>
+  <button class="drive-new-button" type="button" data-global-new aria-haspopup="menu" aria-expanded="false">{{template "icon-plus" .}}<span>Nuevo</span></button>
   <nav class="nav" aria-label="Navegación principal">
     <a class="nav-link {{if eq .CurrentPath "/inicio"}}active{{end}}" href="/inicio">{{template "icon-home" .}}<span>Página principal</span></a>
     <a class="nav-link {{if eq .CurrentPath "/archivos"}}active{{end}}" href="/archivos">{{template "icon-files" .}}<span>Mi unidad</span></a>
+    <a class="nav-link {{if eq .CurrentPath "/recent"}}active{{end}}" href="/recientes">{{template "icon-recent" .}}<span>Recientes</span></a>
+    <a class="nav-link {{if eq .CurrentPath "/starred"}}active{{end}}" href="/destacados">{{template "icon-star" .}}<span>Destacados</span></a>
     <a class="nav-link {{if eq .CurrentPath "/galeria"}}active{{end}}" href="/galeria">{{template "icon-gallery" .}}<span>Galería</span></a>
     <div class="nav-separator" aria-hidden="true"></div>
     <a class="nav-link {{if eq .CurrentPath "/almacenamiento"}}active{{end}}" href="/almacenamiento">{{template "icon-storage" .}}<span>Almacenamiento</span></a>

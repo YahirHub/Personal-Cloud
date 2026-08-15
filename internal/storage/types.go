@@ -21,6 +21,14 @@ type DiscoveredVolume struct {
 	Free           uint64
 }
 
+// Presence resume identidades detectadas sin calcular capacidad ni recorrer contenido.
+// Hardware cuenta cuántos volúmenes comparten el mismo identificador para evitar
+// reconexiones ambiguas cuando un mismo disco físico contiene varias particiones.
+type Presence struct {
+	Persistent map[string]struct{}
+	Hardware   map[string]int
+}
+
 type View struct {
 	ID                 string
 	PersistentID       string

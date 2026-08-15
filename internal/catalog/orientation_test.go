@@ -57,3 +57,39 @@ func TestOrientImageRotate90CW(t *testing.T) {
 		}
 	}
 }
+
+func TestOrientImageAllEXIFOrientations(t *testing.T) {
+	src := image.NewRGBA(image.Rect(0, 0, 2, 3))
+	values := []uint8{1, 2, 3, 4, 5, 6}
+	for y := 0; y < 3; y++ {
+		for x := 0; x < 2; x++ {
+			src.SetRGBA(x, y, color.RGBA{R: values[y*2+x], A: 255})
+		}
+	}
+	cases := map[int][][]uint8{
+		1: {{1, 2}, {3, 4}, {5, 6}},
+		2: {{2, 1}, {4, 3}, {6, 5}},
+		3: {{6, 5}, {4, 3}, {2, 1}},
+		4: {{5, 6}, {3, 4}, {1, 2}},
+		5: {{1, 3, 5}, {2, 4, 6}},
+		6: {{5, 3, 1}, {6, 4, 2}},
+		7: {{6, 4, 2}, {5, 3, 1}},
+		8: {{2, 4, 6}, {1, 3, 5}},
+	}
+	for orientation, want := range cases {
+		t.Run(string(rune('0'+orientation)), func(t *testing.T) {
+			got := orientImage(src, orientation)
+			if got.Bounds().Dy() != len(want) || got.Bounds().Dx() != len(want[0]) {
+				t.Fatalf("orientación %d bounds=%v", orientation, got.Bounds())
+			}
+			for y := range want {
+				for x := range want[y] {
+					r, _, _, _ := got.At(x, y).RGBA()
+					if value := uint8(r >> 8); value != want[y][x] {
+						t.Fatalf("orientación %d pixel %d,%d=%d, quiero %d", orientation, x, y, value, want[y][x])
+					}
+				}
+			}
+		})
+	}
+}

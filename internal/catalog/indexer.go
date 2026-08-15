@@ -23,7 +23,7 @@ import (
 )
 
 const maxThumbnailSourcePixels int64 = 80_000_000
-const ImageCacheVersion = 2
+const ImageCacheVersion = 3
 
 type JobStatus struct {
 	StorageID string    `json:"storage_id"`
@@ -72,6 +72,7 @@ type Indexer struct {
 	verifyNext map[string]bool
 	ffmpeg     string
 	ffprobe    string
+	cacheMu    sync.Mutex
 }
 
 func NewIndexer(catalog *Catalog, manager *storage.Manager, logger *slog.Logger) *Indexer {
@@ -359,6 +360,53 @@ func shouldSkipEntry(root, source string, entry fs.DirEntry) bool {
 func (i *Indexer) removeCache(file File) {
 	_ = os.Remove(i.catalog.CachePath(file.ID, "thumbnail"))
 	_ = os.Remove(i.catalog.CachePath(file.ID, "preview"))
+}
+
+// EnsureImageCacheCurrent regenera bajo demanda miniatura y vista previa cuando
+// cambia la lógica de orientación. Así una actualización corrige cachés antiguas
+// al primer acceso sin exigir que el usuario reindexe manualmente toda la unidad.
+func (i *Indexer) EnsureImageCacheCurrent(ctx context.Context, id string) (File, error) {
+	i.cacheMu.Lock()
+	defer i.cacheMu.Unlock()
+
+	file, ok := i.catalog.ByID(id)
+	if !ok {
+		return File{}, os.ErrNotExist
+	}
+	if file.Kind != "image" {
+		return file, errors.New("el archivo no es una imagen")
+	}
+	if file.CacheVersion >= ImageCacheVersion && file.Thumbnail && file.Preview && fileExistsNonEmpty(i.catalog.CachePath(id, "thumbnail")) && fileExistsNonEmpty(i.catalog.CachePath(id, "preview")) {
+		return file, nil
+	}
+	lease, err := i.manager.Acquire(ctx, file.StorageID, false)
+	if err != nil {
+		return file, err
+	}
+	defer lease.Release()
+
+	relative := filepath.Clean(filepath.FromSlash(file.RelativePath))
+	if relative == "." || filepath.IsAbs(relative) {
+		return file, errors.New("ruta de imagen inválida")
+	}
+	source := filepath.Join(lease.Root, relative)
+	within, err := filepath.Rel(lease.Root, source)
+	if err != nil || within == ".." || strings.HasPrefix(within, ".."+string(filepath.Separator)) {
+		return file, errors.New("ruta de imagen fuera de la unidad")
+	}
+	width, height, thumbnail, preview := i.ensureImageCache(source, id, false)
+	if !thumbnail || !preview {
+		return file, errors.New("no se pudo regenerar la caché de imagen")
+	}
+	file.Width = width
+	file.Height = height
+	file.Thumbnail = thumbnail
+	file.Preview = preview
+	file.CacheVersion = ImageCacheVersion
+	if err := i.catalog.UpsertBatch(ctx, []File{file}); err != nil {
+		return file, err
+	}
+	return file, nil
 }
 
 func (i *Indexer) ensureFFmpegThumbnail(ctx context.Context, source, id string, unchanged, audio bool) bool {

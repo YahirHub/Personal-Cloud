@@ -263,3 +263,89 @@ func TestSettingsPersistSyncInterval(t *testing.T) {
 		t.Fatal("debe rechazar intervalos menores de 5 minutos")
 	}
 }
+
+func TestRefreshStorageVolumeIdentityAfterReconnect(t *testing.T) {
+	storage, err := Open(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer storage.Close()
+	ctx := context.Background()
+	volume, err := storage.RegisterStorageVolume(ctx, RegisterVolumeInput{
+		PersistentID: "volume:old", HardwareID: "fsserial:deadbeef", IdentityStable: true,
+		Name: "USB", Platform: "windows", VirtualRoot: "USB", Category: "mixed", IdleTimeoutSeconds: 300,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := storage.RefreshStorageVolumeIdentity(ctx, volume.ID, "volume:new", "fsserial:deadbeef", `\\?\Volume{new}\`, `\\?\Volume{new}\`, `F:\`, "exFAT", "CLASE"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := storage.StorageVolumeByID(ctx, volume.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PersistentID != "volume:new" || got.HardwareID != "fsserial:deadbeef" || got.Label != "CLASE" {
+		t.Fatalf("identidad no actualizada: %+v", got)
+	}
+}
+
+func TestFileStarsPersistAndFollowMovedCatalogID(t *testing.T) {
+	ctx := context.Background()
+	storage, err := Open(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, err := storage.CreateFirstAdmin(ctx, "admin-stars", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := storage.SetFileStarred(ctx, admin.ID, "file-old", true); err != nil {
+		t.Fatal(err)
+	}
+	starred, err := storage.FileStarred(ctx, admin.ID, "file-old")
+	if err != nil || !starred {
+		t.Fatalf("destacado inicial=%v err=%v", starred, err)
+	}
+	if err := storage.MoveStarredFileID(ctx, "file-old", "file-new"); err != nil {
+		t.Fatal(err)
+	}
+	if old, _ := storage.FileStarred(ctx, admin.ID, "file-old"); old {
+		t.Fatal("el id anterior no debe seguir destacado")
+	}
+	if moved, _ := storage.FileStarred(ctx, admin.ID, "file-new"); !moved {
+		t.Fatal("el destacado debe seguir al nuevo id")
+	}
+	if err := storage.DeleteStarredFileIDs(ctx, []string{"file-new"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := storage.FileStarred(ctx, admin.ID, "file-new"); got {
+		t.Fatal("el destacado debe retirarse al eliminar el archivo")
+	}
+}
+
+func TestMutationsPreserveAppSettings(t *testing.T) {
+	ctx := context.Background()
+	storage, err := Open(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, err := storage.CreateFirstAdmin(ctx, "admin-settings", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := AppSettings{SyncIntervalMinutes: 30, LastSyncAt: time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)}
+	if err := storage.UpdateSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	if err := storage.SetFileStarred(ctx, admin.ID, "file-1", true); err != nil {
+		t.Fatal(err)
+	}
+	got, err := storage.Settings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SyncIntervalMinutes != settings.SyncIntervalMinutes || !got.LastSyncAt.Equal(settings.LastSyncAt) {
+		t.Fatalf("ajustes se perdieron durante mutación: got=%+v want=%+v", got, settings)
+	}
+}

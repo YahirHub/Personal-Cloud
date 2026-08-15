@@ -117,9 +117,15 @@ func (m *Manager) OnlineRegisteredIDs(ctx context.Context) (map[string]struct{},
 	if err != nil {
 		return nil, err
 	}
+	registeredHardware := registeredHardwareCounts(registered)
 	ids := make(map[string]struct{})
 	for _, cfg := range registered {
-		if _, ok := present[strings.ToLower(cfg.PersistentID)]; ok {
+		if _, ok := present.Persistent[strings.ToLower(cfg.PersistentID)]; ok {
+			ids[cfg.ID] = struct{}{}
+			continue
+		}
+		hardwareID := strings.ToLower(strings.TrimSpace(cfg.HardwareID))
+		if hardwareID != "" && registeredHardware[hardwareID] == 1 && present.Hardware[hardwareID] == 1 {
 			ids[cfg.ID] = struct{}{}
 		}
 	}
@@ -132,22 +138,30 @@ func (m *Manager) Views(ctx context.Context) ([]View, error) {
 	if err != nil {
 		return nil, err
 	}
-	byPersistent := make(map[string]DiscoveredVolume, len(discovered))
-	for _, volume := range discovered {
-		byPersistent[strings.ToLower(volume.PersistentID)] = volume
-	}
 	registeredKeys := make(map[string]struct{}, len(registered))
 	views := make([]View, 0, len(discovered)+len(registered))
+	registeredHardware := registeredHardwareCounts(registered)
 
 	for _, cfg := range registered {
-		key := strings.ToLower(cfg.PersistentID)
-		registeredKeys[key] = struct{}{}
-		detected, online := byPersistent[key]
+		detected, online, rebound := matchRegisteredVolume(cfg, discovered)
+		if rebound && registeredHardware[strings.ToLower(strings.TrimSpace(cfg.HardwareID))] > 1 && !secondaryIdentityConfirms(cfg, detected) {
+			detected, online, rebound = DiscoveredVolume{}, false, false
+		}
+		registeredKeys[strings.ToLower(cfg.PersistentID)] = struct{}{}
+		if online {
+			registeredKeys[strings.ToLower(detected.PersistentID)] = struct{}{}
+		}
 		view := m.viewFrom(cfg, detected, online)
-		views = append(views, view)
-		if online && storageIdentityChanged(cfg, detected) {
+		if online && rebound {
+			if err := m.store.RefreshStorageVolumeIdentity(ctx, cfg.ID, detected.PersistentID, detected.HardwareID, detected.Device, detected.VolumeName, detected.MountPoint, detected.FSType, detected.Label); err == nil {
+				view.PersistentID = detected.PersistentID
+			} else {
+				m.logger.Warn("no se pudo actualizar la identidad reconectada de la unidad", "volume_id", cfg.ID, "error", err)
+			}
+		} else if online && storageIdentityChanged(cfg, detected) {
 			_ = m.store.RefreshStorageVolumeDevice(ctx, cfg.ID, detected.Device, detected.VolumeName, detected.MountPoint, detected.FSType, detected.Label, detected.HardwareID)
 		}
+		views = append(views, view)
 	}
 	for _, detected := range discovered {
 		if detected.System {
@@ -329,7 +343,7 @@ func (m *Manager) Unmount(ctx context.Context, volumeID string) error {
 	m.mu.Unlock()
 
 	if mountPoint == "" {
-		detected, findErr := m.findDiscovered(ctx, cfg.PersistentID)
+		detected, findErr := m.findRegisteredDiscovered(ctx, cfg)
 		if findErr != nil {
 			m.setUnmountResult(volumeID, "", false, "")
 			if errors.Is(findErr, ErrOffline) {
@@ -356,7 +370,7 @@ func (m *Manager) ensureMounted(ctx context.Context, cfg store.StorageVolume) (s
 	state := m.stateFor(cfg.ID)
 	state.opMu.Lock()
 	defer state.opMu.Unlock()
-	detected, err := m.findDiscovered(ctx, cfg.PersistentID)
+	detected, err := m.findRegisteredDiscovered(ctx, cfg)
 	if err != nil {
 		return "", err
 	}
@@ -384,6 +398,117 @@ func (m *Manager) ensureMounted(ctx context.Context, cfg store.StorageVolume) (s
 	m.mu.Unlock()
 	m.logger.Info("unidad montada bajo demanda", "volume_id", cfg.ID, "name", cfg.Name, "mount", root)
 	return root, nil
+}
+
+func (m *Manager) findRegisteredDiscovered(ctx context.Context, cfg store.StorageVolume) (DiscoveredVolume, error) {
+	registered, err := m.store.ListStorageVolumes(ctx)
+	if err != nil {
+		return DiscoveredVolume{}, err
+	}
+	registeredHardware := registeredHardwareCounts(registered)
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		volumes, err := m.Discover(ctx)
+		if err != nil && len(volumes) == 0 {
+			lastErr = err
+		} else if detected, ok, rebound := matchRegisteredVolume(cfg, volumes); ok {
+			if rebound && registeredHardware[strings.ToLower(strings.TrimSpace(cfg.HardwareID))] > 1 && !secondaryIdentityConfirms(cfg, detected) {
+				// Varias unidades registradas comparten el mismo disco físico y no hay
+				// etiqueta/filesystem suficiente para decidir con seguridad.
+			} else {
+				if rebound {
+					if err := m.store.RefreshStorageVolumeIdentity(ctx, cfg.ID, detected.PersistentID, detected.HardwareID, detected.Device, detected.VolumeName, detected.MountPoint, detected.FSType, detected.Label); err != nil {
+						m.logger.Warn("unidad reconectada por hardware; no se pudo persistir la nueva identidad", "volume_id", cfg.ID, "error", err)
+					}
+				}
+				return detected, nil
+			}
+		}
+		if attempt == 0 {
+			timer := time.NewTimer(350 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return DiscoveredVolume{}, ctx.Err()
+			case <-timer.C:
+			}
+		}
+	}
+	if lastErr != nil {
+		return DiscoveredVolume{}, lastErr
+	}
+	return DiscoveredVolume{}, ErrOffline
+}
+
+// matchRegisteredVolume prioriza la identidad persistente. Si el sistema operativo
+// cambia esa identidad al reconectar un medio extraíble, permite recuperarlo por
+// hardware solo cuando la coincidencia es inequívoca.
+func matchRegisteredVolume(cfg store.StorageVolume, volumes []DiscoveredVolume) (DiscoveredVolume, bool, bool) {
+	for _, volume := range volumes {
+		if strings.EqualFold(volume.PersistentID, cfg.PersistentID) {
+			return volume, true, false
+		}
+	}
+	hardwareID := strings.TrimSpace(cfg.HardwareID)
+	if hardwareID == "" {
+		return DiscoveredVolume{}, false, false
+	}
+	candidates := make([]DiscoveredVolume, 0, 2)
+	for _, volume := range volumes {
+		if strings.TrimSpace(volume.HardwareID) != "" && strings.EqualFold(volume.HardwareID, hardwareID) {
+			candidates = append(candidates, volume)
+		}
+	}
+	if len(candidates) == 0 {
+		return DiscoveredVolume{}, false, false
+	}
+	// En Linux varias particiones pueden compartir el by-id del disco padre.
+	// Etiqueta/filesystem también impiden aceptar una única candidata que
+	// contradice claramente la identidad secundaria guardada.
+	filtered := candidates[:0]
+	for _, volume := range candidates {
+		if secondaryIdentityContradicts(cfg, volume) {
+			continue
+		}
+		filtered = append(filtered, volume)
+	}
+	if len(filtered) == 1 {
+		return filtered[0], true, true
+	}
+	return DiscoveredVolume{}, false, false
+}
+
+func registeredHardwareCounts(volumes []store.StorageVolume) map[string]int {
+	counts := make(map[string]int)
+	for _, volume := range volumes {
+		if id := strings.ToLower(strings.TrimSpace(volume.HardwareID)); id != "" {
+			counts[id]++
+		}
+	}
+	return counts
+}
+
+func secondaryIdentityContradicts(cfg store.StorageVolume, detected DiscoveredVolume) bool {
+	if left, right := strings.TrimSpace(cfg.Label), strings.TrimSpace(detected.Label); left != "" && right != "" && !strings.EqualFold(left, right) {
+		return true
+	}
+	if left, right := strings.TrimSpace(cfg.FSType), strings.TrimSpace(detected.FSType); left != "" && right != "" && !strings.EqualFold(left, right) {
+		return true
+	}
+	return false
+}
+
+func secondaryIdentityConfirms(cfg store.StorageVolume, detected DiscoveredVolume) bool {
+	if secondaryIdentityContradicts(cfg, detected) {
+		return false
+	}
+	if left, right := strings.TrimSpace(cfg.Label), strings.TrimSpace(detected.Label); left != "" && right != "" && strings.EqualFold(left, right) {
+		return true
+	}
+	if left, right := strings.TrimSpace(cfg.FSType), strings.TrimSpace(detected.FSType); left != "" && right != "" && strings.EqualFold(left, right) {
+		return true
+	}
+	return false
 }
 
 func (m *Manager) findDiscovered(ctx context.Context, persistentID string) (DiscoveredVolume, error) {

@@ -1,7 +1,37 @@
 {{define "download-context"}}
 <div class="context-menu" data-download-menu hidden role="menu" aria-label="Acciones del archivo">
-  <button type="button" role="menuitem" data-secure-download>{{template "icon-download" .}}<span>Descargar</span></button>
-  <button type="button" role="menuitem" data-context-move>{{template "icon-move" .}}<span>Mover</span></button>
-  <button type="button" role="menuitem" class="danger" data-context-delete>{{template "icon-trash" .}}<span>Eliminar</span></button>
+  <button type="button" role="menuitem" data-context-open data-requires-online>{{template "icon-files" .}}<span>Abrir</span></button>
+  <button type="button" role="menuitem" data-secure-download data-requires-online>{{template "icon-download" .}}<span>Descargar</span></button>
+  <button type="button" role="menuitem" data-context-info>{{template "icon-info" .}}<span>Información</span></button>
+  <button type="button" role="menuitem" data-context-star>{{template "icon-star" .}}<span data-context-star-label>Agregar a Destacados</span></button>
+  <div class="context-menu-separator" aria-hidden="true"></div>
+  <button type="button" role="menuitem" data-context-rename data-requires-online>{{template "icon-rename" .}}<span>Renombrar</span></button>
+  <button type="button" role="menuitem" data-context-move data-requires-online>{{template "icon-move" .}}<span>Mover</span></button>
+  <button type="button" role="menuitem" class="danger" data-context-delete data-requires-online>{{template "icon-trash" .}}<span>Eliminar</span></button>
 </div>
+<dialog class="drive-properties-dialog" data-file-info-dialog>
+  <section class="drive-properties-card">
+    <header class="drive-properties-head"><div><small>Información del archivo</small><h2 data-file-info-title>Archivo</h2></div><button class="icon-button" type="button" data-file-info-close aria-label="Cerrar">{{template "icon-close" .}}</button></header>
+    <div class="drive-properties-status" data-file-info-status>Cargando…</div>
+    <dl class="drive-properties-grid">
+      <div><dt>Tipo</dt><dd data-file-info-field="kind">—</dd></div>
+      <div><dt>Tamaño</dt><dd data-file-info-bytes="size">—</dd></div>
+      <div><dt>Ubicación</dt><dd data-file-info-field="location">—</dd></div>
+      <div><dt>Unidad</dt><dd data-file-info-field="storage_name">—</dd></div>
+      <div><dt>Modificado</dt><dd data-file-info-time="mod_time">—</dd></div>
+      <div><dt>Indexado</dt><dd data-file-info-time="indexed_at">—</dd></div>
+      <div><dt>Resolución</dt><dd data-file-info-resolution>—</dd></div>
+      <div><dt>Integridad</dt><dd data-file-info-field="health">—</dd></div>
+      <div><dt>Destacado</dt><dd data-file-info-starred>—</dd></div>
+    </dl>
+    <details class="drive-properties-technical"><summary>Detalles técnicos</summary><dl><div><dt>MIME</dt><dd data-file-info-field="mime">—</dd></div><div><dt>ID de catálogo</dt><dd data-file-info-field="id">—</dd></div></dl></details>
+  </section>
+</dialog>
+<dialog class="drive-rename-dialog" data-rename-dialog>
+  <form class="drive-rename-card" data-rename-form>
+    <header class="drive-properties-head"><div><small>Archivo</small><h2>Renombrar</h2></div><button class="icon-button" type="button" data-rename-close aria-label="Cerrar">{{template "icon-close" .}}</button></header>
+    <label>Nombre<input type="text" name="name" data-rename-input required maxlength="240" autocomplete="off"></label>
+    <div class="dialog-actions"><button class="button button-ghost" type="button" data-rename-cancel>Cancelar</button><button class="button button-primary" type="submit">Guardar</button></div>
+  </form>
+</dialog>
 {{end}}

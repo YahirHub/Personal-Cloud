@@ -122,21 +122,26 @@ func discoverPlatformVolumes(ctx context.Context, mountRoot string) ([]Discovere
 	return result, nil
 }
 
-func discoverPlatformPresence(ctx context.Context) (map[string]struct{}, error) {
+func discoverPlatformPresence(ctx context.Context) (Presence, error) {
 	buffer := make([]uint16, 1024)
 	handle, _, callErr := procFindFirstVolumeW.Call(uintptr(unsafe.Pointer(&buffer[0])), uintptr(len(buffer)))
 	if handle == ^uintptr(0) {
-		return nil, fmt.Errorf("enumerar presencia de volúmenes: %w", callErr)
+		return Presence{}, fmt.Errorf("enumerar presencia de volúmenes: %w", callErr)
 	}
 	defer procFindVolumeClose.Call(handle)
-	result := make(map[string]struct{})
+	result := Presence{Persistent: make(map[string]struct{}), Hardware: make(map[string]int)}
 	for {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return Presence{}, err
 		}
 		volumeName := syscall.UTF16ToString(buffer)
 		if volumeName != "" {
-			result[strings.ToLower("volume:"+volumeName)] = struct{}{}
+			result.Persistent[strings.ToLower("volume:"+volumeName)] = struct{}{}
+			_, _, _, serial := windowsVolumeInfo(volumeName)
+			if serial != 0 {
+				hardwareID := strings.ToLower(fmt.Sprintf("fsserial:%08x", serial))
+				result.Hardware[hardwareID]++
+			}
 		}
 		for i := range buffer {
 			buffer[i] = 0

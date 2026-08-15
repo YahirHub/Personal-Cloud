@@ -22,7 +22,7 @@ var (
 	ErrAdminExists = errors.New("ya existe un administrador")
 )
 
-const stateVersion = 3
+const stateVersion = 4
 
 type Store struct {
 	mu        sync.RWMutex
@@ -36,6 +36,7 @@ type persistedState struct {
 	Users    []User          `json:"users"`
 	Sessions []Session       `json:"sessions"`
 	Volumes  []StorageVolume `json:"volumes,omitempty"`
+	Stars    []FileStar      `json:"stars,omitempty"`
 	Settings AppSettings     `json:"settings,omitempty"`
 }
 
@@ -80,6 +81,13 @@ type Session struct {
 	UserID    string    `json:"user_id"`
 	TokenHash string    `json:"token_hash"`
 	ExpiresAt time.Time `json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// FileStar guarda una marca Destacado por usuario sin mezclarla con el catálogo físico.
+type FileStar struct {
+	UserID    string    `json:"user_id"`
+	FileID    string    `json:"file_id"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -474,6 +482,8 @@ func cloneState(state persistedState) persistedState {
 		Users:    append([]User(nil), state.Users...),
 		Sessions: append([]Session(nil), state.Sessions...),
 		Volumes:  append([]StorageVolume(nil), state.Volumes...),
+		Stars:    append([]FileStar(nil), state.Stars...),
+		Settings: state.Settings,
 	}
 }
 

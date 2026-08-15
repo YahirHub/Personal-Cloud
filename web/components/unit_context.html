@@ -1,0 +1,30 @@
+{{define "unit-context"}}
+<div class="context-menu unit-context-menu" data-unit-menu hidden role="menu" aria-label="Acciones de la unidad">
+  <button type="button" role="menuitem" data-unit-open>{{template "icon-folder" .}}<span>Abrir</span></button>
+  <button type="button" role="menuitem" data-unit-info>{{template "icon-info" .}}<span>Información</span></button>
+  <button type="button" role="menuitem" data-unit-index>{{template "icon-sync" .}}<span>Actualizar catálogo</span></button>
+  <button type="button" role="menuitem" data-unit-mount>{{template "icon-storage" .}}<span>Conectar / montar</span></button>
+  <a role="menuitem" href="/almacenamiento">{{template "icon-settings" .}}<span>Administrar almacenamiento</span></a>
+</div>
+<dialog class="drive-properties-dialog" data-unit-dialog>
+  <section class="drive-properties-card">
+    <header class="drive-properties-head"><div><small>Información de la unidad</small><h2 data-unit-dialog-title>Unidad</h2></div><button class="icon-button" type="button" data-unit-dialog-close aria-label="Cerrar">{{template "icon-close" .}}</button></header>
+    <div class="drive-properties-status" data-unit-dialog-status>Cargando…</div>
+    <dl class="drive-properties-grid">
+      <div><dt>Estado</dt><dd data-unit-field="status">—</dd></div>
+      <div><dt>Ubicación</dt><dd data-unit-field="virtual_root">—</dd></div>
+      <div><dt>Archivos</dt><dd data-unit-field="file_count">—</dd></div>
+      <div><dt>Tamaño catalogado</dt><dd data-unit-bytes="catalog_bytes">—</dd></div>
+      <div><dt>Capacidad</dt><dd data-unit-bytes="capacity">—</dd></div>
+      <div><dt>Espacio disponible</dt><dd data-unit-bytes="free">—</dd></div>
+      <div><dt>Sistema de archivos</dt><dd data-unit-field="fs_type">—</dd></div>
+      <div><dt>Modo</dt><dd data-unit-mode>—</dd></div>
+      <div><dt>Imágenes</dt><dd data-unit-field="images">—</dd></div>
+      <div><dt>Videos</dt><dd data-unit-field="videos">—</dd></div>
+      <div><dt>Audio</dt><dd data-unit-field="audio">—</dd></div>
+      <div><dt>Indexación</dt><dd data-unit-index-state>—</dd></div>
+    </dl>
+    <details class="drive-properties-technical"><summary>Detalles técnicos</summary><dl><div><dt>Etiqueta</dt><dd data-unit-field="label">—</dd></div><div><dt>Punto de montaje</dt><dd data-unit-field="mount_point">—</dd></div><div><dt>Identidad persistente</dt><dd data-unit-field="persistent_id">—</dd></div><div><dt>Identidad de hardware</dt><dd data-unit-field="hardware_id">—</dd></div></dl></details>
+  </section>
+</dialog>
+{{end}}

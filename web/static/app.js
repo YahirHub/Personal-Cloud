@@ -112,14 +112,47 @@
   const csrfToken = $('meta[name="csrf-token"]')?.content || '';
   const downloadMenu = $('[data-download-menu]');
   let downloadTargetID = '';
+  let downloadTargetOffline = false;
+  let downloadTargetInfo = null;
+  const setStarMenuState = (starred, loading = false) => {
+    const button = $('[data-context-star]', downloadMenu);
+    const label = $('[data-context-star-label]', downloadMenu);
+    if (button) button.disabled = loading;
+    if (label) label.textContent = loading ? 'Comprobando…' : (starred ? 'Quitar de Destacados' : 'Agregar a Destacados');
+  };
+  const loadDownloadTargetInfo = async () => {
+    const id = downloadTargetID;
+    if (!id) throw new Error('Archivo no seleccionado');
+    if (downloadTargetInfo?.id === id) return downloadTargetInfo;
+    const response = await fetch(`/api/archivo/${encodeURIComponent(id)}/info`, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+    if (!response.ok) throw new Error((await response.text()).trim() || 'No se pudo obtener información');
+    const info = await response.json();
+    if (downloadTargetID === id) {
+      downloadTargetInfo = info;
+      downloadTargetOffline = info.online === false;
+      setStarMenuState(Boolean(info.starred));
+      $$('[data-requires-online]', downloadMenu).forEach((button) => { button.disabled = downloadTargetOffline; });
+      $$(`[data-download-file-id="${CSS.escape(id)}"]`).forEach((node) => {
+        node.dataset.offline = String(downloadTargetOffline);
+        node.classList.toggle('is-offline', downloadTargetOffline);
+      });
+    }
+    return info;
+  };
   const hideDownloadMenu = () => {
     if (!downloadMenu) return;
     downloadMenu.hidden = true;
     downloadTargetID = '';
+    downloadTargetOffline = false;
+    downloadTargetInfo = null;
   };
-  const showDownloadMenu = (x, y, fileID) => {
+  const showDownloadMenu = (x, y, fileID, offline = false) => {
     if (!downloadMenu || !fileID) return;
     downloadTargetID = fileID;
+    downloadTargetOffline = Boolean(offline);
+    downloadTargetInfo = null;
+    setStarMenuState(false, true);
+    $$('[data-requires-online]', downloadMenu).forEach((button) => { button.disabled = downloadTargetOffline; });
     downloadMenu.hidden = false;
     downloadMenu.style.left = '0px';
     downloadMenu.style.top = '0px';
@@ -128,13 +161,259 @@
     const top = Math.max(8, Math.min(y, window.innerHeight - rect.height - 8));
     downloadMenu.style.left = `${left}px`;
     downloadMenu.style.top = `${top}px`;
+    loadDownloadTargetInfo().catch(() => setStarMenuState(false));
   };
   $$('[data-file-actions]').forEach((button) => button.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
     const rect = button.getBoundingClientRect();
-    showDownloadMenu(rect.right - 8, rect.bottom + 6, button.dataset.fileActions);
+    const offline = button.closest('[data-offline]')?.dataset.offline === 'true';
+    showDownloadMenu(rect.right - 8, rect.bottom + 6, button.dataset.fileActions, offline);
   }));
+
+  // Menú y propiedades reales de las unidades mostradas como carpetas raíz.
+  const unitMenu = $('[data-unit-menu]');
+  const unitDialog = $('[data-unit-dialog]');
+  let unitTargetID = '';
+  let unitTargetURL = '';
+  let unitInfoCache = null;
+  const hideUnitMenu = () => { if (unitMenu) unitMenu.hidden = true; };
+  const showToast = (message) => {
+    const toast = document.createElement('div');
+    toast.className = 'drive-unit-toast';
+    toast.textContent = message;
+    document.body.append(toast);
+    window.setTimeout(() => toast.remove(), 3200);
+  };
+
+  // Menú Nuevo estilo Drive: crear carpeta o subir, siempre conectado a backend real.
+  const globalNewButton = $('[data-global-new]');
+  const newMenu = $('[data-new-menu]');
+  const folderDialog = $('[data-new-folder-dialog]');
+  const folderForm = $('[data-new-folder-form]', folderDialog);
+  const positionNewMenu = () => {
+    if (!newMenu || !globalNewButton) return;
+    const buttonRect = globalNewButton.getBoundingClientRect();
+    newMenu.hidden = false;
+    newMenu.style.left = '0px';
+    newMenu.style.top = '0px';
+    const rect = newMenu.getBoundingClientRect();
+    const left = Math.max(8, Math.min(buttonRect.left, window.innerWidth - rect.width - 8));
+    const top = Math.max(8, Math.min(buttonRect.bottom + 8, window.innerHeight - rect.height - 8));
+    newMenu.style.left = `${left}px`;
+    newMenu.style.top = `${top}px`;
+    globalNewButton.setAttribute('aria-expanded', 'true');
+  };
+  const hideNewMenu = () => {
+    if (newMenu) newMenu.hidden = true;
+    globalNewButton?.setAttribute('aria-expanded', 'false');
+  };
+  globalNewButton?.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!newMenu) { window.location.assign('/archivos?nuevo=1'); return; }
+    if (newMenu.hidden) positionNewMenu(); else hideNewMenu();
+  });
+  $('[data-new-upload]', newMenu)?.addEventListener('click', () => {
+    hideNewMenu();
+    if (uploadDialog) uploadDialog.showModal(); else window.location.assign('/archivos?nuevo=1');
+  });
+  const openNewFolderDialog = () => {
+    hideNewMenu();
+    if (!folderDialog) { window.location.assign('/archivos?carpeta=1'); return; }
+    folderDialog.showModal();
+    const input = $('input[name="name"]', folderDialog);
+    if (input) { input.value = ''; window.setTimeout(() => input.focus(), 0); }
+  };
+  $('[data-new-folder]', newMenu)?.addEventListener('click', openNewFolderDialog);
+  $('[data-close-new-folder]')?.addEventListener('click', () => folderDialog?.close());
+  $('[data-cancel-new-folder]')?.addEventListener('click', () => folderDialog?.close());
+  folderDialog?.addEventListener('click', (event) => { if (event.target === folderDialog) folderDialog.close(); });
+  if (folderDialog && new URLSearchParams(window.location.search).get('carpeta') === '1') {
+    window.setTimeout(() => openNewFolderDialog(), 0);
+  }
+  folderForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = new FormData(folderForm);
+    const root = String(form.get('destination_root') || '').trim();
+    const parent = String(form.get('parent') || '').trim();
+    const name = String(form.get('name') || '').trim();
+    if (!root || !name) return;
+    const submit = $('button[type="submit"]', folderForm);
+    if (submit) submit.disabled = true;
+    try {
+      const response = await fetch('/api/carpetas/crear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', Accept: 'application/json' },
+        body: new URLSearchParams({ csrf_token: csrfToken, destination_root: root, parent, name }),
+        cache: 'no-store'
+      });
+      if (!response.ok) throw new Error((await response.text()).trim() || 'No se pudo crear la carpeta');
+      const data = await response.json();
+      folderDialog.close();
+      showToast('Carpeta creada');
+      const parts = [root, ...(String(data.path || '').split('/').filter(Boolean))].map(encodeURIComponent);
+      window.setTimeout(() => window.location.assign(`/archivos/ver/${parts.join('/')}`), 160);
+    } catch (error) { showToast(error.message || 'No se pudo crear la carpeta'); }
+    finally { if (submit) submit.disabled = false; }
+  });
+  document.addEventListener('click', (event) => { if (!event.target.closest('[data-new-menu]') && !event.target.closest('[data-global-new]')) hideNewMenu(); });
+
+  // Arrastrar y soltar archivos sobre Mi unidad o una carpeta, como en Drive.
+  const filesPageDrop = $('[data-drive-files-page]');
+  const dropOverlay = $('[data-drop-overlay]');
+  if (filesPageDrop?.dataset.uploadDrop === 'true') {
+    let dragDepth = 0;
+    const showDrop = () => { if (dropOverlay) dropOverlay.hidden = false; filesPageDrop.classList.add('is-dragging-files'); };
+    const hideDrop = () => { dragDepth = 0; if (dropOverlay) dropOverlay.hidden = true; filesPageDrop.classList.remove('is-dragging-files'); };
+    filesPageDrop.addEventListener('dragenter', (event) => {
+      if (!event.dataTransfer?.types?.includes('Files')) return;
+      event.preventDefault(); dragDepth++; showDrop();
+    });
+    filesPageDrop.addEventListener('dragover', (event) => {
+      if (!event.dataTransfer?.types?.includes('Files')) return;
+      event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; showDrop();
+    });
+    filesPageDrop.addEventListener('dragleave', (event) => {
+      event.preventDefault(); dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) hideDrop();
+    });
+    filesPageDrop.addEventListener('drop', async (event) => {
+      event.preventDefault();
+      const files = [...(event.dataTransfer?.files || [])].filter((file) => file && file.name);
+      hideDrop();
+      if (!files.length) return;
+      const currentPath = filesPageDrop.dataset.currentPath || '/';
+      let uploaded = 0;
+      for (const file of files) {
+        const body = new FormData();
+        body.append('csrf_token', csrfToken);
+        body.append('current_path', currentPath);
+        body.append('target_dir', '');
+        body.append('file', file, file.name);
+        try {
+          showToast(`Subiendo ${uploaded + 1} de ${files.length}: ${file.name}`);
+          const response = await fetch('/archivos/subir', { method: 'POST', body, redirect: 'follow' });
+          const finalURL = new URL(response.url, window.location.origin);
+          const uploadError = finalURL.searchParams.get('error');
+          if (!response.ok || uploadError) throw new Error(uploadError || `No se pudo subir ${file.name}`);
+          uploaded++;
+        } catch (error) { showToast(error.message || `No se pudo subir ${file.name}`); break; }
+      }
+      if (uploaded) { showToast(`${uploaded} archivo${uploaded === 1 ? '' : 's'} subido${uploaded === 1 ? '' : 's'}`); window.setTimeout(() => window.location.reload(), 420); }
+    });
+  }
+  const positionUnitMenu = (x, y) => {
+    if (!unitMenu) return;
+    unitMenu.hidden = false;
+    unitMenu.style.left = '0px';
+    unitMenu.style.top = '0px';
+    const rect = unitMenu.getBoundingClientRect();
+    unitMenu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - rect.width - 8))}px`;
+    unitMenu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - rect.height - 8))}px`;
+  };
+  const loadUnitInfo = async () => {
+    if (!unitTargetID) throw new Error('Unidad no seleccionada');
+    const response = await fetch(`/api/almacenamiento/${encodeURIComponent(unitTargetID)}`, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+    if (!response.ok) throw new Error((await response.text()).trim() || 'No se pudo leer la unidad');
+    unitInfoCache = await response.json();
+    const mountButton = $('[data-unit-mount]', unitMenu);
+    if (mountButton) {
+      mountButton.hidden = Boolean(unitInfoCache.mounted);
+      mountButton.disabled = !unitInfoCache.online;
+      mountButton.title = unitInfoCache.online ? '' : 'La unidad no está presente físicamente';
+    }
+    return unitInfoCache;
+  };
+  const showUnitMenu = (x, y, id, url) => {
+    if (!unitMenu || !id) return;
+    unitTargetID = id;
+    unitTargetURL = url || '';
+    unitInfoCache = null;
+    hideDownloadMenu();
+    positionUnitMenu(x, y);
+    loadUnitInfo().catch(() => {});
+  };
+  $$('[data-unit-actions]').forEach((button) => button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = button.getBoundingClientRect();
+    showUnitMenu(rect.right - 8, rect.bottom + 6, button.dataset.unitActions, button.dataset.unitUrl);
+  }));
+  $('[data-unit-open]', unitMenu)?.addEventListener('click', () => {
+    const target = unitTargetURL;
+    hideUnitMenu();
+    if (target) window.location.assign(target);
+  });
+  const fillUnitDialog = (info) => {
+    if (!unitDialog || !info) return;
+    const title = $('[data-unit-dialog-title]', unitDialog);
+    if (title) title.textContent = info.virtual_root || info.name || 'Unidad';
+    const status = $('[data-unit-dialog-status]', unitDialog);
+    if (status) {
+      status.classList.toggle('online', Boolean(info.online));
+      status.classList.toggle('offline', !info.online);
+      status.textContent = info.online
+        ? `${info.status || 'Conectada'}${info.mounted ? ' · lista para servir originales' : ' · se montará al abrir un archivo'}`
+        : 'Unidad desconectada · el catálogo local continúa disponible';
+    }
+    $$('[data-unit-field]', unitDialog).forEach((node) => {
+      const value = info[node.dataset.unitField];
+      node.textContent = value === null || value === undefined || value === '' ? '—' : String(value);
+    });
+    $$('[data-unit-bytes]', unitDialog).forEach((node) => {
+      node.textContent = formatBytes(info[node.dataset.unitBytes] || 0);
+    });
+    const mode = $('[data-unit-mode]', unitDialog);
+    if (mode) mode.textContent = info.read_only ? 'Solo lectura' : 'Lectura y escritura';
+    const indexState = $('[data-unit-index-state]', unitDialog);
+    if (indexState) {
+      const labels = { queued: 'En cola', counting: 'Contando', scanning: 'Indexando', done: 'Actualizado', error: 'Error' };
+      indexState.textContent = `${labels[info.index_state] || 'Sin actividad'}${['queued','counting','scanning'].includes(info.index_state) ? ` · ${info.index_percent || 0}%` : ''}${info.index_error ? ` · ${info.index_error}` : ''}`;
+    }
+  };
+  $('[data-unit-info]', unitMenu)?.addEventListener('click', async () => {
+    hideUnitMenu();
+    if (!unitDialog) return;
+    unitDialog.showModal();
+    try { fillUnitDialog(unitInfoCache || await loadUnitInfo()); }
+    catch (error) {
+      const status = $('[data-unit-dialog-status]', unitDialog);
+      if (status) { status.className = 'drive-properties-status offline'; status.textContent = error.message || 'No se pudo obtener información'; }
+    }
+  });
+  $('[data-unit-dialog-close]')?.addEventListener('click', () => unitDialog?.close());
+  unitDialog?.addEventListener('click', (event) => { if (event.target === unitDialog) unitDialog.close(); });
+  $('[data-unit-index]', unitMenu)?.addEventListener('click', async () => {
+    const id = unitTargetID;
+    hideUnitMenu();
+    if (!id) return;
+    try {
+      const response = await fetch(`/api/almacenamiento/${encodeURIComponent(id)}/indexar`, { method: 'POST', headers: { 'X-CSRF-Token': csrfToken, Accept: 'application/json' }, cache: 'no-store' });
+      if (!response.ok) throw new Error((await response.text()).trim() || 'No se pudo actualizar el catálogo');
+      showToast('Actualización del catálogo iniciada');
+    } catch (error) { showToast(error.message || 'No se pudo actualizar el catálogo'); }
+  });
+  $('[data-unit-mount]', unitMenu)?.addEventListener('click', async () => {
+    const id = unitTargetID;
+    hideUnitMenu();
+    if (!id) return;
+    try {
+      const response = await fetch(`/api/almacenamiento/${encodeURIComponent(id)}/montar`, { method: 'POST', headers: { 'X-CSRF-Token': csrfToken, Accept: 'application/json' }, cache: 'no-store' });
+      if (!response.ok) throw new Error((await response.text()).trim() || 'No se pudo conectar la unidad');
+      unitInfoCache = null;
+      showToast('Unidad conectada y lista para servir archivos');
+      window.setTimeout(() => window.location.reload(), 450);
+    } catch (error) { showToast(error.message || 'No se pudo conectar la unidad'); }
+  });
+  document.addEventListener('click', (event) => { if (!event.target.closest('[data-unit-menu]') && !event.target.closest('[data-unit-actions]')) hideUnitMenu(); });
+  document.addEventListener('contextmenu', (event) => {
+    const card = event.target.closest('.drive-folder-unit,.file-root-card');
+    if (!card) return;
+    const button = $('[data-unit-actions]', card);
+    if (!button) return;
+    event.preventDefault();
+    showUnitMenu(event.clientX, event.clientY, button.dataset.unitActions, button.dataset.unitUrl);
+  });
 
   const applyViewMode = (container, buttons, mode, storageKey) => {
     if (!container || !['grid', 'list'].includes(mode)) return;
@@ -184,6 +463,113 @@
     const id = downloadTargetID;
     hideDownloadMenu();
     try { await startSecureDownload(id); } catch (error) { window.alert(error.message || 'No se pudo descargar el archivo.'); }
+  });
+  $('[data-context-open]', downloadMenu)?.addEventListener('click', () => {
+    const id = downloadTargetID;
+    hideDownloadMenu();
+    if (id) window.location.assign(`/archivo/${encodeURIComponent(id)}/original`);
+  });
+  const fileInfoDialog = $('[data-file-info-dialog]');
+  $('[data-context-info]', downloadMenu)?.addEventListener('click', async () => {
+    const id = downloadTargetID;
+    hideDownloadMenu();
+    if (!id || !fileInfoDialog) return;
+    fileInfoDialog.showModal();
+    const status = $('[data-file-info-status]', fileInfoDialog);
+    if (status) { status.className = 'drive-properties-status'; status.textContent = 'Cargando…'; }
+    try {
+      const response = await fetch(`/api/archivo/${encodeURIComponent(id)}/info`, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+      if (!response.ok) throw new Error((await response.text()).trim() || 'No se pudo obtener información');
+      const info = await response.json();
+      const title = $('[data-file-info-title]', fileInfoDialog);
+      if (title) title.textContent = info.name || 'Archivo';
+      if (status) {
+        status.classList.toggle('online', Boolean(info.online));
+        status.classList.toggle('offline', !info.online);
+        status.textContent = info.online ? 'Original disponible' : 'Original temporalmente no disponible · metadata conservada en el catálogo';
+      }
+      $$('[data-file-info-field]', fileInfoDialog).forEach((node) => {
+        const value = info[node.dataset.fileInfoField];
+        node.textContent = value === null || value === undefined || value === '' ? '—' : String(value);
+      });
+      $$('[data-file-info-bytes]', fileInfoDialog).forEach((node) => { node.textContent = formatBytes(info[node.dataset.fileInfoBytes] || 0); });
+      $$('[data-file-info-time]', fileInfoDialog).forEach((node) => { node.textContent = formatTime(info[node.dataset.fileInfoTime]); });
+      const resolution = $('[data-file-info-resolution]', fileInfoDialog);
+      if (resolution) resolution.textContent = info.width && info.height ? `${info.width} × ${info.height}` : '—';
+      const starred = $('[data-file-info-starred]', fileInfoDialog);
+      if (starred) starred.textContent = info.starred ? 'Sí' : 'No';
+    } catch (error) {
+      if (status) { status.className = 'drive-properties-status offline'; status.textContent = error.message || 'No se pudo obtener información'; }
+    }
+  });
+  $('[data-file-info-close]')?.addEventListener('click', () => fileInfoDialog?.close());
+  fileInfoDialog?.addEventListener('click', (event) => { if (event.target === fileInfoDialog) fileInfoDialog.close(); });
+
+  $('[data-context-star]', downloadMenu)?.addEventListener('click', async () => {
+    const id = downloadTargetID;
+    if (!id) return;
+    try {
+      const info = downloadTargetInfo || await loadDownloadTargetInfo();
+      const next = !Boolean(info.starred);
+      const response = await fetch(`/api/archivo/${encodeURIComponent(id)}/destacar`, {
+        method: 'POST',
+        headers: { 'X-CSRF-Token': csrfToken, 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', Accept: 'application/json' },
+        body: new URLSearchParams({ starred: String(next) }),
+        cache: 'no-store'
+      });
+      if (!response.ok) throw new Error((await response.text()).trim() || 'No se pudo actualizar Destacados');
+      const result = await response.json();
+      if (downloadTargetInfo) downloadTargetInfo.starred = Boolean(result.starred);
+      setStarMenuState(Boolean(result.starred));
+      hideDownloadMenu();
+      showToast(result.starred ? 'Agregado a Destacados' : 'Quitado de Destacados');
+      if (window.location.pathname === '/destacados' && !result.starred) window.setTimeout(() => window.location.reload(), 220);
+    } catch (error) {
+      setStarMenuState(false);
+      showToast(error.message || 'No se pudo actualizar Destacados');
+    }
+  });
+
+  const renameDialog = $('[data-rename-dialog]');
+  const renameForm = $('[data-rename-form]', renameDialog);
+  const renameInput = $('[data-rename-input]', renameDialog);
+  let renameTargetID = '';
+  const closeRenameDialog = () => { renameTargetID = ''; renameDialog?.close(); };
+  $('[data-context-rename]', downloadMenu)?.addEventListener('click', async () => {
+    const id = downloadTargetID;
+    if (!id || !renameDialog || !renameInput) return;
+    try {
+      const info = downloadTargetInfo || await loadDownloadTargetInfo();
+      renameTargetID = id;
+      renameInput.value = info.name || '';
+      hideDownloadMenu();
+      renameDialog.showModal();
+      window.setTimeout(() => { renameInput.focus(); renameInput.select(); }, 0);
+    } catch (error) { showToast(error.message || 'No se pudo preparar el renombrado'); }
+  });
+  $('[data-rename-close]')?.addEventListener('click', closeRenameDialog);
+  $('[data-rename-cancel]')?.addEventListener('click', closeRenameDialog);
+  renameDialog?.addEventListener('click', (event) => { if (event.target === renameDialog) closeRenameDialog(); });
+  renameForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const id = renameTargetID;
+    const name = renameInput?.value.trim() || '';
+    if (!id || !name) return;
+    const submit = renameForm.querySelector('button[type="submit"]');
+    if (submit) submit.disabled = true;
+    try {
+      const response = await fetch(`/api/archivo/${encodeURIComponent(id)}/renombrar`, {
+        method: 'POST',
+        headers: { 'X-CSRF-Token': csrfToken, 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', Accept: 'application/json' },
+        body: new URLSearchParams({ name }),
+        cache: 'no-store'
+      });
+      if (!response.ok) throw new Error((await response.text()).trim() || 'No se pudo renombrar');
+      closeRenameDialog();
+      showToast('Archivo renombrado');
+      window.setTimeout(() => window.location.reload(), 180);
+    } catch (error) { showToast(error.message || 'No se pudo renombrar el archivo'); }
+    finally { if (submit) submit.disabled = false; }
   });
   document.addEventListener('click', (event) => { if (!event.target.closest('[data-download-menu]')) hideDownloadMenu(); });
   window.addEventListener('blur', hideDownloadMenu);
@@ -986,12 +1372,25 @@
     const target = event.target.closest('[data-download-file-id]');
     let fileID = target?.dataset.downloadFileId || '';
     if (!fileID && viewer?.open && viewer.contains(event.target)) fileID = currentMediaID;
-    if (!fileID || target?.dataset.offline === 'true') return;
+    if (!fileID) return;
     event.preventDefault();
-    showDownloadMenu(event.clientX, event.clientY, fileID);
+    showDownloadMenu(event.clientX, event.clientY, fileID, target?.dataset.offline === 'true');
   });
 
   // Listado continuo reutilizable de Archivos.
+  const fileFilterForm = $('[data-file-filter-form]');
+  $$('[data-file-filter]', fileFilterForm || document).forEach((select) => select.addEventListener('change', () => {
+    const page = fileFilterForm?.querySelector('[name=pagina]');
+    if (page) page.remove();
+    fileFilterForm?.requestSubmit();
+  }));
+  $('[data-clear-file-filters]')?.addEventListener('click', () => {
+    const params = new URLSearchParams(window.location.search);
+    ['tipo', 'modificado', 'fuente', 'pagina'].forEach((key) => params.delete(key));
+    const query = params.toString();
+    window.location.assign(`${window.location.pathname}${query ? `?${query}` : ''}`);
+  });
+
   const fileList = $('[data-files-list]');
   const fileSentinel = $('[data-files-sentinel]');
   let loadingFiles = false;
@@ -1051,7 +1450,7 @@
         event.preventDefault();
         event.stopPropagation();
         const rect = more.getBoundingClientRect();
-        showDownloadMenu(rect.right - 8, rect.bottom + 6, item.id);
+        showDownloadMenu(rect.right - 8, rect.bottom + 6, item.id, Boolean(item.offline));
       });
       anchor.append(more);
     }
@@ -1062,6 +1461,11 @@
     loadingFiles = true;
     try {
       const query = new URLSearchParams({ path: fileList.dataset.path, offset: fileList.dataset.next || '0', limit: '100' });
+      const currentParams = new URLSearchParams(window.location.search);
+      ['tipo', 'modificado', 'fuente'].forEach((key) => {
+        const value = currentParams.get(key);
+        if (value) query.set(key, value);
+      });
       const response = await fetch(`/api/archivos/listado?${query}`, { headers: { Accept: 'application/json' }, cache: 'no-store' });
       if (!response.ok) return;
       const data = await response.json();
@@ -1287,13 +1691,13 @@
   document.addEventListener('pointerdown', (event) => {
     if (event.pointerType !== 'touch') return;
     const target = event.target.closest('[data-download-file-id]');
-    if (!target || target.dataset.offline === 'true') return;
+    if (!target) return;
     pressStartX = event.clientX; pressStartY = event.clientY;
     window.clearTimeout(pressTimer);
     pressTimer = window.setTimeout(() => {
       longPressFired = true;
       if (navigator.vibrate) navigator.vibrate(20);
-      showDownloadMenu(pressStartX, pressStartY, target.dataset.downloadFileId);
+      showDownloadMenu(pressStartX, pressStartY, target.dataset.downloadFileId, target.dataset.offline === 'true');
     }, 550);
   }, { passive: true });
   document.addEventListener('pointermove', (event) => {

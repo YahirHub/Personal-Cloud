@@ -209,3 +209,50 @@ func (s *Store) RefreshStorageVolumeDevice(ctx context.Context, id, device, volu
 		return ErrNotFound
 	})
 }
+
+// RefreshStorageVolumeIdentity actualiza de forma atómica la identidad que el
+// sistema operativo asignó tras una reconexión. Rechaza colisiones para no
+// reasignar por accidente una unidad registrada a otro dispositivo.
+func (s *Store) RefreshStorageVolumeIdentity(ctx context.Context, id, persistentID, hardwareID, device, volumeName, mountPoint, fsType, label string) error {
+	persistentID = strings.TrimSpace(persistentID)
+	if persistentID == "" {
+		return errors.New("identidad persistente vacía")
+	}
+	return s.mutate(ctx, func(next *persistedState) error {
+		index := -1
+		for i := range next.Volumes {
+			if next.Volumes[i].ID == id {
+				index = i
+				continue
+			}
+			if strings.EqualFold(next.Volumes[i].PersistentID, persistentID) {
+				return ErrVolumeExists
+			}
+		}
+		if index < 0 {
+			return ErrNotFound
+		}
+		volume := &next.Volumes[index]
+		volume.PersistentID = persistentID
+		if strings.TrimSpace(hardwareID) != "" {
+			volume.HardwareID = strings.TrimSpace(hardwareID)
+		}
+		if strings.TrimSpace(device) != "" {
+			volume.Device = strings.TrimSpace(device)
+		}
+		if strings.TrimSpace(volumeName) != "" {
+			volume.VolumeName = strings.TrimSpace(volumeName)
+		}
+		if strings.TrimSpace(mountPoint) != "" {
+			volume.PreferredMountPoint = strings.TrimSpace(mountPoint)
+		}
+		if strings.TrimSpace(fsType) != "" {
+			volume.FSType = strings.TrimSpace(fsType)
+		}
+		if strings.TrimSpace(label) != "" {
+			volume.Label = strings.TrimSpace(label)
+		}
+		volume.UpdatedAt = time.Now().UTC()
+		return nil
+	})
+}

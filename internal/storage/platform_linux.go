@@ -84,16 +84,24 @@ func discoverPlatformVolumes(ctx context.Context, mountRoot string) ([]Discovere
 	return result, nil
 }
 
-func discoverPlatformPresence(ctx context.Context) (map[string]struct{}, error) {
+func discoverPlatformPresence(ctx context.Context) (Presence, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return Presence{}, err
 	}
-	result := make(map[string]struct{})
+	result := Presence{Persistent: make(map[string]struct{}), Hardware: make(map[string]int)}
+	hardware := linuxHardwareIDMap()
 	for _, identity := range linuxPersistentIdentities() {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return Presence{}, err
 		}
-		result[strings.ToLower(identity.kind+":"+identity.value)] = struct{}{}
+		result.Persistent[strings.ToLower(identity.kind+":"+identity.value)] = struct{}{}
+		device, err := filepath.EvalSymlinks(identity.link)
+		if err != nil {
+			continue
+		}
+		if hardwareID := strings.ToLower(strings.TrimSpace(hardware[device])); hardwareID != "" {
+			result.Hardware[hardwareID]++
+		}
 	}
 	return result, nil
 }

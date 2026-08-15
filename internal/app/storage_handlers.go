@@ -66,13 +66,19 @@ func (a *App) dashboardGet(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		homeFolders = append(homeFolders, explorerRoot{
-			Name:       view.VirtualRoot,
-			URL:        explorerURL("/" + view.VirtualRoot),
-			Category:   view.Category,
-			Status:     view.Status,
-			FileCount:  counts[view.ID],
-			TotalBytes: bytesByStorage[view.ID],
-			Offline:    !view.Online,
+			ID:          view.ID,
+			Name:        view.VirtualRoot,
+			StorageName: view.Name,
+			URL:         explorerURL("/" + view.VirtualRoot),
+			Category:    view.Category,
+			Status:      view.Status,
+			FileCount:   counts[view.ID],
+			TotalBytes:  bytesByStorage[view.ID],
+			Capacity:    view.Capacity,
+			Free:        view.Free,
+			Mounted:     view.Mounted,
+			ReadOnly:    view.ReadOnly,
+			Offline:     !view.Online,
 		})
 	}
 
@@ -97,7 +103,7 @@ func (a *App) dashboardGet(w http.ResponseWriter, r *http.Request) {
 			Health:      file.Health,
 		}
 		if file.Thumbnail {
-			item.ThumbnailURL = "/galeria/" + file.ID + "/miniatura"
+			item.ThumbnailURL = catalogCacheURL(file, "miniatura")
 		}
 		homeFiles = append(homeFiles, item)
 	}
@@ -198,10 +204,10 @@ func (a *App) galleryGet(w http.ResponseWriter, r *http.Request) {
 func (a *App) mediaItem(file catalog.File) mediaPageItem {
 	item := mediaPageItem{File: file, OriginalURL: "/archivo/" + file.ID + "/original"}
 	if file.Thumbnail {
-		item.ThumbnailURL = "/galeria/" + file.ID + "/miniatura"
+		item.ThumbnailURL = catalogCacheURL(file, "miniatura")
 	}
 	if file.Preview {
-		item.PreviewURL = "/galeria/" + file.ID + "/vista-previa"
+		item.PreviewURL = catalogCacheURL(file, "vista-previa")
 	}
 	return item
 }
@@ -419,6 +425,97 @@ func (a *App) storageIndexPost(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/almacenamiento?ok="+urlQuery("Indexación iniciada"), http.StatusSeeOther)
 }
 
+func (a *App) storageInfoAPI(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	views, discoverErr := a.storageManager.Views(r.Context())
+	var selected *storagepkg.View
+	for i := range views {
+		if views[i].Registered && views[i].ID == id {
+			copy := views[i]
+			selected = &copy
+			break
+		}
+	}
+	if selected == nil {
+		http.NotFound(w, r)
+		return
+	}
+	files := a.catalog.FilesByStorage(id)
+	var bytes int64
+	var images, videos, audio int
+	for _, file := range files {
+		bytes += file.Size
+		switch file.Kind {
+		case "image":
+			images++
+		case "video":
+			videos++
+		case "audio":
+			audio++
+		}
+	}
+	job := a.indexer.Status(id)
+	payload := map[string]any{
+		"id": selected.ID, "name": selected.Name, "virtual_root": selected.VirtualRoot,
+		"label": selected.Label, "category": selected.Category, "status": selected.Status,
+		"online": selected.Online, "mounted": selected.Mounted, "read_only": selected.ReadOnly,
+		"removable": selected.Removable, "capacity": selected.Capacity, "free": selected.Free,
+		"fs_type": selected.FSType, "platform": selected.Platform, "mount_point": selected.MountPoint,
+		"persistent_id": selected.PersistentID, "hardware_id": selected.HardwareID,
+		"file_count": len(files), "catalog_bytes": bytes, "images": images, "videos": videos, "audio": audio,
+		"index_state": job.State, "index_percent": job.Percent(), "index_error": job.Error,
+	}
+	if discoverErr != nil {
+		payload["detection_warning"] = discoverErr.Error()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func (a *App) storageIndexAPI(w http.ResponseWriter, r *http.Request) {
+	if !a.validCSRFValue(r, r.Header.Get("X-CSRF-Token")) {
+		http.Error(w, "CSRF inválido", http.StatusForbidden)
+		return
+	}
+	id := r.PathValue("id")
+	if _, err := a.store.StorageVolumeByID(r.Context(), id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if !a.indexer.Enqueue(id) {
+		http.Error(w, "La unidad ya se está indexando o la cola está ocupada.", http.StatusConflict)
+		return
+	}
+	user := userFromContext(r.Context())
+	_ = a.store.Audit(r.Context(), user.ID, "storage_index", "encolado_desde_drive", a.clientIP(r))
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "message": "Actualización del catálogo iniciada"})
+}
+
+func (a *App) storageMountAPI(w http.ResponseWriter, r *http.Request) {
+	if !a.validCSRFValue(r, r.Header.Get("X-CSRF-Token")) {
+		http.Error(w, "CSRF inválido", http.StatusForbidden)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	root, err := a.storageManager.Mount(ctx, r.PathValue("id"))
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, storagepkg.ErrOffline) {
+			status = http.StatusServiceUnavailable
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "mount_point": root})
+}
+
 func (a *App) photoThumbnailGet(w http.ResponseWriter, r *http.Request) {
 	a.serveCatalogCache(w, r, "thumbnail")
 }
@@ -432,6 +529,18 @@ func (a *App) serveCatalogCache(w http.ResponseWriter, r *http.Request, size str
 	if !ok || (file.Kind != "image" && file.Kind != "video" && file.Kind != "audio") {
 		http.NotFound(w, r)
 		return
+	}
+	cacheCurrent := file.Kind != "image" || file.CacheVersion >= catalog.ImageCacheVersion
+	if file.Kind == "image" && !cacheCurrent {
+		ctx, cancel := context.WithTimeout(r.Context(), 35*time.Second)
+		updated, err := a.indexer.EnsureImageCacheCurrent(ctx, file.ID)
+		cancel()
+		if err == nil {
+			file = updated
+			cacheCurrent = true
+		} else if !errors.Is(err, storagepkg.ErrOffline) {
+			a.logger.Debug("no se pudo renovar caché de imagen al servirla", "file_id", file.ID, "error", err)
+		}
 	}
 	if size == "thumbnail" && !file.Thumbnail || size == "preview" && (file.Kind != "image" || !file.Preview) {
 		http.NotFound(w, r)
@@ -449,9 +558,49 @@ func (a *App) serveCatalogCache(w http.ResponseWriter, r *http.Request, size str
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("Cache-Control", "private, max-age=86400")
+	if cacheCurrent {
+		w.Header().Set("Cache-Control", "private, max-age=86400")
+	} else {
+		// Si la unidad sigue desconectada, no inmortaliza en el navegador una
+		// miniatura antigua: al reconectar se volverá a validar y corregir.
+		w.Header().Set("Cache-Control", "private, no-cache")
+	}
 	w.Header().Set("Content-Type", "image/jpeg")
 	http.ServeContent(w, r, file.Name, info.ModTime(), cacheFile)
+}
+
+func (a *App) fileInfoAPI(w http.ResponseWriter, r *http.Request) {
+	file, ok := a.catalog.ByID(r.PathValue("id"))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	views, _ := a.storageManager.Views(r.Context())
+	storageName := file.VirtualRoot
+	online := false
+	for _, view := range views {
+		if view.Registered && view.ID == file.StorageID {
+			storageName = view.Name
+			online = view.Online
+			break
+		}
+	}
+	location := path.Join("/", file.VirtualRoot, path.Dir(strings.ReplaceAll(file.RelativePath, "\\", "/")))
+	if strings.HasSuffix(location, "/.") {
+		location = strings.TrimSuffix(location, "/.")
+	}
+	starred := false
+	if user := userFromContext(r.Context()); user != nil {
+		starred, _ = a.store.FileStarred(r.Context(), user.ID, file.ID)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"id": file.ID, "name": file.Name, "kind": file.Kind, "mime": file.MIME,
+		"size": file.Size, "mod_time": file.ModTime, "indexed_at": file.IndexedAt,
+		"location": location, "storage_name": storageName, "online": online, "starred": starred,
+		"width": file.Width, "height": file.Height, "health": file.Health,
+	})
 }
 
 func (a *App) originalFileGet(w http.ResponseWriter, r *http.Request) {
@@ -484,6 +633,17 @@ func (a *App) healthGet(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func catalogCacheURL(file catalog.File, endpoint string) string {
+	version := file.CacheVersion
+	if file.Kind == "image" && version < catalog.ImageCacheVersion {
+		version = catalog.ImageCacheVersion
+	}
+	if version < 1 {
+		version = 1
+	}
+	return "/galeria/" + file.ID + "/" + endpoint + "?v=" + strconv.Itoa(version)
 }
 
 func registeredVolumeCount(views []storagepkg.View) int {

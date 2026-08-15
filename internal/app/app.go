@@ -54,52 +54,62 @@ type App struct {
 }
 
 type pageData struct {
-	Title              string
-	Description        string
-	CurrentPath        string
-	CSRFToken          string
-	Error              string
-	Info               string
-	User               *store.User
-	RetryAfter         int
-	StorageItems       []storagePageItem
-	StorageError       string
-	Stats              dashboardStats
-	HomeFolders        []explorerRoot
-	HomeFiles          []homeFileItem
-	Media              []mediaPageItem
-	MediaOffset        int
-	MediaNext          int
-	MediaHasMore       bool
-	MediaTotal         int
-	GalleryType        string
-	GallerySort        string
-	GalleryFilters     int
-	ListingMode        string
-	ListingBaseURL     string
-	ListingInfiniteURL string
-	ListingPagesURL    string
-	ListingPrevURL     string
-	ListingNextURL     string
-	ListingPage        int
-	ListingPrev        int
-	ListingNext        int
-	ListingHasPrev     bool
-	ListingHasNext     bool
-	ExplorerItems      []explorerItem
-	ExplorerRoots      []explorerRoot
-	Breadcrumbs        []breadcrumbItem
-	ExplorerPath       string
-	ExplorerCanWrite   bool
-	ExplorerHasMore    bool
-	ExplorerNext       int
-	SearchQuery        string
-	SearchMode         bool
-	MaxUploadBytes     int64
-	Settings           store.AppSettings
-	SettingsSyncText   string
-	MoveDestinations   []moveDestination
-	IntegrityUnits     []integrityUnitView
+	Title                  string
+	Description            string
+	CurrentPath            string
+	CSRFToken              string
+	Error                  string
+	Info                   string
+	User                   *store.User
+	RetryAfter             int
+	StorageItems           []storagePageItem
+	StorageError           string
+	Stats                  dashboardStats
+	HomeFolders            []explorerRoot
+	HomeFiles              []homeFileItem
+	Media                  []mediaPageItem
+	MediaOffset            int
+	MediaNext              int
+	MediaHasMore           bool
+	MediaTotal             int
+	GalleryType            string
+	GallerySort            string
+	GalleryFilters         int
+	ListingMode            string
+	ListingBaseURL         string
+	ListingInfiniteURL     string
+	ListingPagesURL        string
+	ListingPrevURL         string
+	ListingNextURL         string
+	ListingPage            int
+	ListingPrev            int
+	ListingNext            int
+	ListingHasPrev         bool
+	ListingHasNext         bool
+	ExplorerItems          []explorerItem
+	ExplorerRoots          []explorerRoot
+	Breadcrumbs            []breadcrumbItem
+	ExplorerPath           string
+	ExplorerRoot           string
+	ExplorerRelative       string
+	ExplorerCanWrite       bool
+	ExplorerHasMore        bool
+	ExplorerNext           int
+	SearchQuery            string
+	SearchMode             bool
+	FileCollection         string
+	FileCollectionTitle    string
+	FileCollectionSubtitle string
+	FileTypeFilter         string
+	FileModifiedFilter     string
+	FileSourceFilter       string
+	FileFilterAction       string
+	FileFilterCount        int
+	MaxUploadBytes         int64
+	Settings               store.AppSettings
+	SettingsSyncText       string
+	MoveDestinations       []moveDestination
+	IntegrityUnits         []integrityUnitView
 }
 
 type contextKey string
@@ -234,6 +244,8 @@ func (a *App) routes() {
 	a.mux.Handle("GET /almacenamiento", a.requireAuth(http.HandlerFunc(a.storageGet)))
 	a.mux.Handle("GET /archivos", a.requireAuth(http.HandlerFunc(a.filesGet)))
 	a.mux.Handle("GET /archivos/ver/{path...}", a.requireAuth(http.HandlerFunc(a.filesGet)))
+	a.mux.Handle("GET /recientes", a.requireAuth(http.HandlerFunc(a.recentFilesGet)))
+	a.mux.Handle("GET /destacados", a.requireAuth(http.HandlerFunc(a.starredFilesGet)))
 	a.mux.Handle("GET /api/archivos/listado", a.requireAuth(http.HandlerFunc(a.filesListAPI)))
 	a.mux.Handle("POST /archivos/subir", a.requireAuth(http.HandlerFunc(a.filesUploadPost)))
 	a.mux.Handle("GET /galeria", a.requireAuth(http.HandlerFunc(a.galleryGet)))
@@ -246,6 +258,9 @@ func (a *App) routes() {
 		http.Redirect(w, r, "/galeria", http.StatusMovedPermanently)
 	})))
 	a.mux.Handle("GET /archivo/{id}/original", a.requireAuth(http.HandlerFunc(a.originalFileGet)))
+	a.mux.Handle("GET /api/archivo/{id}/info", a.requireAuth(http.HandlerFunc(a.fileInfoAPI)))
+	a.mux.Handle("POST /api/archivo/{id}/destacar", a.requireAuth(http.HandlerFunc(a.fileStarPost)))
+	a.mux.Handle("POST /api/archivo/{id}/renombrar", a.requireAuth(http.HandlerFunc(a.fileRenamePost)))
 	a.mux.Handle("GET /api/video/{id}/calidades", a.requireAuth(http.HandlerFunc(a.videoQualitiesGet)))
 	a.mux.Handle("POST /api/video/{id}/preparar", a.requireAuth(http.HandlerFunc(a.videoVariantPreparePost)))
 	a.mux.Handle("GET /api/video/{id}/estado", a.requireAuth(http.HandlerFunc(a.videoVariantStatusGet)))
@@ -257,6 +272,9 @@ func (a *App) routes() {
 	a.mux.Handle("POST /almacenamiento/{id}/montar", a.requireAuth(http.HandlerFunc(a.storageMountPost)))
 	a.mux.Handle("POST /almacenamiento/{id}/desmontar", a.requireAuth(http.HandlerFunc(a.storageUnmountPost)))
 	a.mux.Handle("POST /almacenamiento/{id}/indexar", a.requireAuth(http.HandlerFunc(a.storageIndexPost)))
+	a.mux.Handle("GET /api/almacenamiento/{id}", a.requireAuth(http.HandlerFunc(a.storageInfoAPI)))
+	a.mux.Handle("POST /api/almacenamiento/{id}/indexar", a.requireAuth(http.HandlerFunc(a.storageIndexAPI)))
+	a.mux.Handle("POST /api/almacenamiento/{id}/montar", a.requireAuth(http.HandlerFunc(a.storageMountAPI)))
 	a.mux.Handle("POST /almacenamiento/{id}/danados/omitir", a.requireAuth(http.HandlerFunc(a.storageIgnoreDamagedPost)))
 	a.mux.Handle("POST /almacenamiento/{id}/danados/eliminar", a.requireAuth(http.HandlerFunc(a.storageDeleteDamagedPost)))
 	a.mux.Handle("GET /configuracion", a.requireAuth(http.HandlerFunc(a.settingsGet)))

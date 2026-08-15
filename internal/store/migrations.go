@@ -19,6 +19,9 @@ func migrateState(state persistedState) (persistedState, bool, error) {
 	}
 	if state.Version == 2 {
 		state.Version = 3
+	}
+	if state.Version == 3 {
+		state.Version = 4
 		return state, true, nil
 	}
 	if state.Version < stateVersion {
@@ -94,6 +97,21 @@ func validateState(state persistedState) error {
 			return errors.New("raíz virtual duplicada")
 		}
 		virtualRoots[rk] = struct{}{}
+	}
+
+	starKeys := make(map[string]struct{}, len(state.Stars))
+	for _, star := range state.Stars {
+		if star.UserID == "" || star.FileID == "" {
+			return errors.New("destacado incompleto")
+		}
+		if _, exists := userIDs[star.UserID]; !exists {
+			return errors.New("destacado referencia un usuario inexistente")
+		}
+		key := star.UserID + "\x00" + star.FileID
+		if _, exists := starKeys[key]; exists {
+			return errors.New("destacado duplicado")
+		}
+		starKeys[key] = struct{}{}
 	}
 
 	for _, session := range state.Sessions {
