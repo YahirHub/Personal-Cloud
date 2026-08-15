@@ -93,7 +93,7 @@ func (a *App) photosGet(w http.ResponseWriter, r *http.Request) {
 	}
 	photos := make([]photoPageItem, 0, len(files))
 	for _, file := range files {
-		item := photoPageItem{File: file, OriginalURL: "/archivos/" + file.ID + "/original"}
+		item := photoPageItem{File: file, OriginalURL: "/archivo/" + file.ID + "/original"}
 		if file.Thumbnail {
 			item.ThumbnailURL = "/fotos/" + file.ID + "/miniatura"
 		}
@@ -137,9 +137,16 @@ func (a *App) storageRegisterPost(w http.ResponseWriter, r *http.Request) {
 		redirectStorageError(w, r, err)
 		return
 	}
+	started := a.indexer.Enqueue(created.ID)
 	user := userFromContext(r.Context())
 	_ = a.store.Audit(r.Context(), user.ID, "storage_register", "correcto", a.clientIP(r))
-	http.Redirect(w, r, "/almacenamiento?ok="+urlQuery("Unidad registrada: "+created.Name), http.StatusSeeOther)
+	message := "Unidad registrada: " + created.Name
+	if started {
+		message += ". Indexación iniciada automáticamente"
+	} else {
+		message += ". Usa Indexar ahora para generar el catálogo"
+	}
+	http.Redirect(w, r, "/almacenamiento?ok="+urlQuery(message), http.StatusSeeOther)
 }
 
 func (a *App) storageUpdatePost(w http.ResponseWriter, r *http.Request) {

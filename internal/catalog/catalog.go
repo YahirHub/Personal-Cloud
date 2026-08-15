@@ -153,6 +153,21 @@ func (c *Catalog) FilesByStorage(storageID string) []File {
 	return result
 }
 
+func (c *Catalog) AllFiles() []File {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	result := make([]File, 0, len(c.files))
+	for _, file := range c.files {
+		result = append(result, file)
+	}
+	sort.SliceStable(result, func(i, j int) bool {
+		left := strings.ToLower(result[i].VirtualRoot + "/" + result[i].RelativePath)
+		right := strings.ToLower(result[j].VirtualRoot + "/" + result[j].RelativePath)
+		return left < right
+	})
+	return result
+}
+
 func (c *Catalog) UpsertBatch(ctx context.Context, files []File) error {
 	if len(files) == 0 {
 		return nil

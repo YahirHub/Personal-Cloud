@@ -20,22 +20,27 @@ type renderStats struct {
 }
 
 type renderData struct {
-	Title          string
-	Description    string
-	CurrentPath    string
-	CSRFToken      string
-	Error          string
-	Info           string
-	RetryAfter     int
-	User           *renderUser
-	Stats          renderStats
-	StorageItems   []any
-	StorageError   string
-	Photos         []any
-	PhotoOffset    int
-	PhotoNext      int
-	PhotoHasMore   bool
-	MaxUploadBytes int64
+	Title            string
+	Description      string
+	CurrentPath      string
+	CSRFToken        string
+	Error            string
+	Info             string
+	RetryAfter       int
+	User             *renderUser
+	Stats            renderStats
+	StorageItems     []any
+	StorageError     string
+	Photos           []any
+	ExplorerItems    []any
+	ExplorerRoots    []any
+	Breadcrumbs      []any
+	ExplorerPath     string
+	ExplorerCanWrite bool
+	PhotoOffset      int
+	PhotoNext        int
+	PhotoHasMore     bool
+	MaxUploadBytes   int64
 }
 
 func TestRenderPages(t *testing.T) {
@@ -43,7 +48,7 @@ func TestRenderPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pages := []string{"setup", "login", "onboarding", "dashboard", "storage", "photos"}
+	pages := []string{"setup", "login", "onboarding", "dashboard", "storage", "files", "photos"}
 	for _, page := range pages {
 		t.Run(page, func(t *testing.T) {
 			data := renderData{Title: "Prueba", Description: "Prueba", CSRFToken: "token"}

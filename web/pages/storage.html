@@ -23,7 +23,7 @@
   <div class="storage-grid">
   {{range .StorageItems}}
     {{if .Registered}}
-    <article class="storage-card">
+    <article class="storage-card" {{if or (eq .Job.State "queued") (eq .Job.State "scanning")}}data-index-active="true"{{end}}>
       <div class="storage-card-head">
         <div>
           <div class="eyebrow">{{categoryLabel .Category}}</div>
@@ -31,7 +31,7 @@
           <div class="status-line"><span class="status-dot {{statusClass .Status}}"></span>{{.Status}}</div>
         </div>
         <div class="storage-capacity">
-          {{if gt .Capacity 0}}<strong>{{formatBytes .Free}} libres</strong><small>de {{formatBytes .Capacity}} · {{percent .Free .Capacity}}% usado</small>{{else}}<strong>Sin lectura de capacidad</strong><small>La unidad puede estar desmontada</small>{{end}}
+          {{if gt .Capacity 0}}<strong>{{formatBytesU .Free}} libres</strong><small>de {{formatBytesU .Capacity}} · {{percent .Free .Capacity}}% usado</small>{{else}}<strong>Sin lectura de capacidad</strong><small>La unidad puede estar desmontada</small>{{end}}
         </div>
       </div>
 
@@ -51,7 +51,9 @@
       <div class="button-row wrap">
         <form method="post" action="/almacenamiento/{{.ID}}/indexar">
           <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-          <button class="button button-primary" type="submit">Indexar</button>
+          <button class="button button-primary" type="submit" {{if or (not .Online) (eq .Job.State "queued") (eq .Job.State "scanning")}}disabled{{end}}>
+            {{if eq .Job.State "queued"}}En cola…{{else if eq .Job.State "scanning"}}Indexando…{{else}}Indexar ahora{{end}}
+          </button>
         </form>
         {{if .Mounted}}
         <form method="post" action="/almacenamiento/{{.ID}}/desmontar">
@@ -108,7 +110,7 @@
           <h2>{{.Name}}</h2>
           <div class="status-line"><span class="status-dot status-online"></span>{{if .Mounted}}Montada{{else}}Disponible{{end}}</div>
         </div>
-        {{if gt .Capacity 0}}<div class="storage-capacity"><strong>{{formatBytes .Free}} libres</strong><small>de {{formatBytes .Capacity}}</small></div>{{end}}
+        {{if gt .Capacity 0}}<div class="storage-capacity"><strong>{{formatBytesU .Free}} libres</strong><small>de {{formatBytesU .Capacity}}</small></div>{{end}}
       </div>
       <dl class="meta-grid">
         <div><dt>Identidad</dt><dd class="break-all">{{.PersistentID}}</dd></div>
@@ -130,7 +132,8 @@
         <label>Desmontar tras (segundos)<input type="number" name="idle_seconds" value="300" min="30" max="604800"></label>
         <label class="check"><input type="checkbox" name="auto_unmount" checked> Desmontaje automático</label>
         <label class="check"><input type="checkbox" name="read_only"> Solo lectura</label>
-        <button class="button button-primary" type="submit">Registrar unidad</button>
+        <small>Al registrar, Personal Cloud iniciará la primera indexación automáticamente para llenar Fotos y Archivos.</small>
+        <button class="button button-primary" type="submit">Registrar e indexar</button>
       </form>
     </article>
     {{end}}

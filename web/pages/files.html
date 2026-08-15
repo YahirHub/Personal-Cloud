@@ -1,0 +1,93 @@
+{{define "content"}}
+<section class="page">
+  <header class="page-header">
+    <div>
+      <div class="eyebrow">Namespace virtual</div>
+      <h1>Archivos</h1>
+      <p class="muted">Navega el catálogo sin despertar discos innecesariamente. Abrir o descargar un original monta únicamente la unidad que lo contiene.</p>
+    </div>
+  </header>
+
+  {{if .Info}}<div class="alert alert-success">{{.Info}}</div>{{end}}
+  {{if .Error}}<div class="alert alert-error">{{.Error}}</div>{{end}}
+  {{if .StorageError}}<div class="alert">La detección del sistema reportó: {{.StorageError}}</div>{{end}}
+
+  <nav class="breadcrumbs" aria-label="Ruta">
+    {{range .Breadcrumbs}}<a href="{{.URL}}">{{.Name}}</a><span>/</span>{{end}}
+  </nav>
+
+  {{if eq .ExplorerPath "/"}}
+    {{if .ExplorerRoots}}
+    <div class="file-root-grid">
+      {{range .ExplorerRoots}}
+      <a class="file-root-card" href="{{.URL}}">
+        <div class="file-root-icon">▣</div>
+        <div>
+          <strong>{{.Name}}</strong>
+          <small>{{categoryLabel .Category}} · {{.FileCount}} archivos · {{formatBytes .TotalBytes}}</small>
+          <small>{{if .Offline}}Desconectada; catálogo disponible{{else}}{{.Status}}{{end}}</small>
+        </div>
+      </a>
+      {{end}}
+    </div>
+    {{else}}
+    <div class="empty-state">
+      <div class="empty-icon">+</div>
+      <h2>No hay unidades registradas</h2>
+      <p>Registra una unidad desde Almacenamiento. La primera indexación comenzará automáticamente.</p>
+      <p><a class="button button-primary" href="/almacenamiento">Ir a Almacenamiento</a></p>
+    </div>
+    {{end}}
+  {{else}}
+    {{if .ExplorerItems}}
+    <div class="file-list" role="list">
+      {{range .ExplorerItems}}
+      {{if .IsDir}}
+      <a class="file-row" href="{{.URL}}" role="listitem">
+        <span class="file-kind folder">▣</span>
+        <span class="file-main"><strong>{{.Name}}</strong><small>Carpeta{{if .Offline}} · unidad desconectada{{end}}</small></span>
+        <span class="file-size">—</span>
+      </a>
+      {{else}}
+      <a class="file-row" href="{{.DownloadURL}}" role="listitem">
+        <span class="file-kind">{{if eq .Kind "image"}}▧{{else if eq .Kind "video"}}▶{{else if eq .Kind "audio"}}♪{{else if eq .Kind "document"}}▤{{else if eq .Kind "archive"}}▥{{else}}•{{end}}</span>
+        <span class="file-main"><strong>{{.Name}}</strong><small>{{.Kind}} · {{formatTime .ModTime}}{{if .Offline}} · original no disponible hasta reconectar{{end}}</small></span>
+        <span class="file-size">{{formatBytes .Size}}</span>
+      </a>
+      {{end}}
+      {{end}}
+    </div>
+    {{else}}
+    <div class="empty-state compact-empty">
+      <div class="empty-icon">∅</div>
+      <h2>Esta carpeta no tiene archivos catalogados</h2>
+      <p>Si acabas de conectar o modificar la unidad, ejecuta una indexación desde Almacenamiento.</p>
+    </div>
+    {{end}}
+  {{end}}
+
+  <section class="panel upload-panel">
+    <div>
+      <div class="eyebrow">Subida</div>
+      <h2>{{if eq .ExplorerPath "/"}}Destino automático{{else}}Subir aquí{{end}}</h2>
+      {{if eq .ExplorerPath "/"}}
+      <p>Personal Cloud elige una unidad compatible. Prioriza Fotos para imágenes, Multimedia para video/audio, Documentos para documentos y después unidades Mixtas; entre opciones equivalentes usa la que tenga más espacio libre.</p>
+      {{else}}
+      <p>El archivo se guardará dentro de <code>{{.ExplorerPath}}</code>. La unidad solo se montará durante la operación y la reindexación posterior.</p>
+      {{end}}
+    </div>
+    {{if .ExplorerCanWrite}}
+    <form class="form-grid" method="post" action="/archivos/subir" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="current_path" value="{{.ExplorerPath}}">
+      <label>Subcarpeta opcional<input name="target_dir" placeholder="Ej. 2026/Agosto"></label>
+      <label>Archivo<input type="file" name="file" required></label>
+      <small>Máximo: {{formatBytes .MaxUploadBytes}}.</small>
+      <button class="button button-primary" type="submit">Subir archivo</button>
+    </form>
+    {{else}}
+    <div class="alert">No hay una unidad conectada y escribible compatible con este destino.</div>
+    {{end}}
+  </section>
+</section>
+{{end}}

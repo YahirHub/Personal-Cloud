@@ -25,6 +25,9 @@ Implementado:
 - Galería `/fotos` que usa la caché interna aunque el disco original esté desmontado.
 - Apertura del original mediante montaje bajo demanda.
 - Upload web directo a una unidad registrada.
+- Registro de unidad con primera indexación automática y reindexación manual visible.
+- Explorador `/archivos` basado en el catálogo, usable aunque una unidad esté desmontada o desconectada.
+- Upload con destino automático según tipo de archivo, categoría de unidad y espacio libre conocido.
 - Políticas por tipo de unidad: documentos, fotos, multimedia o mixto.
 - Servidor WebDAV en `/webdav/` con las mismas credenciales.
 - TLS directo opcional o despliegue detrás de proxy HTTPS.
@@ -35,7 +38,6 @@ Implementado:
 Pendientes deliberados:
 
 - thumbnails para HEIC/HEIF/AVIF/WebP/RAW y portadas de video;
-- explorador web general + routing automático de uploads;
 - evaluación posterior de SMB.
 
 Consulta `tareas/` y `contexto/` para el estado técnico completo.
@@ -205,7 +207,7 @@ Se dejó una deuda técnica explícita: si el catálogo supera aproximadamente 5
 
 ### Indexación
 
-Desde `/almacenamiento`, pulsa **Indexar** sobre una unidad registrada.
+Al registrar una unidad desde `/almacenamiento`, el servidor inicia la primera indexación automáticamente. La tarjeta registrada muestra **Indexar ahora** para reconciliar cambios hechos fuera de Personal Cloud. Mientras el trabajo está en cola o escaneando, la pantalla actualiza el estado automáticamente.
 
 El indexador:
 
@@ -219,6 +221,27 @@ El indexador:
 8. permite que el idle timeout desmonte la unidad.
 
 Solo existe un worker de indexación para no despertar o cargar varios HDD al mismo tiempo.
+
+## Explorador y subida automática
+
+Abre:
+
+```text
+/archivos
+```
+
+La raíz muestra las unidades como carpetas virtuales. Dentro de cada una, la jerarquía se reconstruye desde el catálogo, por lo que navegar no requiere montar el HDD. Los directorios vacíos todavía no se persisten en el catálogo: aparecen cuando contienen al menos un archivo indexado.
+
+Al abrir un archivo se solicita el original al VFS, que monta solamente su unidad durante la lectura.
+
+Desde la raíz de `/archivos`, la subida usa destino automático:
+
+- imágenes: `Fotos` → `Multimedia` → `Mixto`;
+- video/audio: `Multimedia` → `Mixto`;
+- documentos/archivos/otros: `Documentos` → `Mixto`;
+- entre unidades con la misma prioridad se prefiere la que reporta más espacio libre.
+
+Si navegas dentro de una raíz virtual, la subida se dirige explícitamente a esa unidad y sigue aplicando su política de tipos. Después de cada subida se encola la reindexación correspondiente.
 
 ### Formatos actuales de preview
 

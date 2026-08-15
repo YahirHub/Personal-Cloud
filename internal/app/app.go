@@ -48,22 +48,27 @@ type App struct {
 }
 
 type pageData struct {
-	Title          string
-	Description    string
-	CurrentPath    string
-	CSRFToken      string
-	Error          string
-	Info           string
-	User           *store.User
-	RetryAfter     int
-	StorageItems   []storagePageItem
-	StorageError   string
-	Stats          dashboardStats
-	Photos         []photoPageItem
-	PhotoOffset    int
-	PhotoNext      int
-	PhotoHasMore   bool
-	MaxUploadBytes int64
+	Title            string
+	Description      string
+	CurrentPath      string
+	CSRFToken        string
+	Error            string
+	Info             string
+	User             *store.User
+	RetryAfter       int
+	StorageItems     []storagePageItem
+	StorageError     string
+	Stats            dashboardStats
+	Photos           []photoPageItem
+	PhotoOffset      int
+	PhotoNext        int
+	PhotoHasMore     bool
+	ExplorerItems    []explorerItem
+	ExplorerRoots    []explorerRoot
+	Breadcrumbs      []breadcrumbItem
+	ExplorerPath     string
+	ExplorerCanWrite bool
+	MaxUploadBytes   int64
 }
 
 type contextKey string
@@ -181,10 +186,13 @@ func (a *App) routes() {
 	a.mux.Handle("POST /bienvenida/completar", a.requireAuth(http.HandlerFunc(a.onboardingCompletePost)))
 	a.mux.Handle("GET /inicio", a.requireAuth(http.HandlerFunc(a.dashboardGet)))
 	a.mux.Handle("GET /almacenamiento", a.requireAuth(http.HandlerFunc(a.storageGet)))
+	a.mux.Handle("GET /archivos", a.requireAuth(http.HandlerFunc(a.filesGet)))
+	a.mux.Handle("GET /archivos/ver/{path...}", a.requireAuth(http.HandlerFunc(a.filesGet)))
+	a.mux.Handle("POST /archivos/subir", a.requireAuth(http.HandlerFunc(a.filesUploadPost)))
 	a.mux.Handle("GET /fotos", a.requireAuth(http.HandlerFunc(a.photosGet)))
 	a.mux.Handle("GET /fotos/{id}/miniatura", a.requireAuth(http.HandlerFunc(a.photoThumbnailGet)))
 	a.mux.Handle("GET /fotos/{id}/vista-previa", a.requireAuth(http.HandlerFunc(a.photoPreviewGet)))
-	a.mux.Handle("GET /archivos/{id}/original", a.requireAuth(http.HandlerFunc(a.originalFileGet)))
+	a.mux.Handle("GET /archivo/{id}/original", a.requireAuth(http.HandlerFunc(a.originalFileGet)))
 	a.mux.Handle("POST /almacenamiento/registrar", a.requireAuth(http.HandlerFunc(a.storageRegisterPost)))
 	a.mux.Handle("POST /almacenamiento/{id}/configuracion", a.requireAuth(http.HandlerFunc(a.storageUpdatePost)))
 	a.mux.Handle("POST /almacenamiento/{id}/montar", a.requireAuth(http.HandlerFunc(a.storageMountPost)))

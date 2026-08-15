@@ -179,3 +179,34 @@ code { border-radius: 7px; background: var(--surface-2); padding: 2px 6px; }
   .meta-grid { grid-template-columns: 1fr; }
   .photo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+.button:disabled { opacity: .55; cursor: not-allowed; }
+.breadcrumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin: -8px 0 22px; color: var(--muted); font-size: .9rem; }
+.breadcrumbs a { color: var(--text); text-decoration: none; font-weight: 750; }
+.file-root-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.file-root-card { display: flex; align-items: center; gap: 14px; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 18px; color: var(--text); text-decoration: none; box-shadow: 0 7px 25px rgba(24, 35, 58, .04); }
+.file-root-card:hover, .file-row:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.file-root-icon { display: grid; width: 44px; height: 44px; flex: 0 0 auto; place-items: center; border-radius: 12px; background: var(--surface-2); color: var(--accent); font-size: 1.4rem; }
+.file-root-card div:last-child { min-width: 0; }
+.file-root-card strong, .file-root-card small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-root-card small { margin-top: 4px; color: var(--muted); }
+.file-list { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.file-row { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 64px; border-bottom: 1px solid var(--border); padding: 9px 14px; color: var(--text); text-decoration: none; }
+.file-row:last-child { border-bottom: 0; }
+.file-kind { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 10px; background: var(--surface-2); color: var(--accent); font-weight: 900; }
+.file-kind.folder { font-size: 1.2rem; }
+.file-main { min-width: 0; }
+.file-main strong, .file-main small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-main small, .file-size { color: var(--muted); }
+.file-size { font-size: .88rem; white-space: nowrap; }
+.upload-panel { margin-top: 22px; }
+.compact-empty { margin-top: 0; padding: 38px 22px; }
+
+@media (max-width: 900px) {
+  .file-root-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 620px) {
+  .file-root-grid { grid-template-columns: 1fr; }
+  .file-row { grid-template-columns: 38px minmax(0, 1fr); }
+  .file-size { grid-column: 2; }
+}

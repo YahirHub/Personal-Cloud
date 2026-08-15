@@ -19,6 +19,7 @@ type Renderer struct {
 func NewRenderer() (*Renderer, error) {
 	funcs := template.FuncMap{
 		"formatBytes":    formatBytes,
+		"formatBytesU":   formatBytesU,
 		"formatDuration": formatDuration,
 		"formatTime":     formatTime,
 		"categoryLabel":  categoryLabel,

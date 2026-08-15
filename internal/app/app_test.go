@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"io"
 	"log/slog"
 	"net"
@@ -11,8 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"personalcloud/internal/catalog"
 	"personalcloud/internal/config"
+	"personalcloud/internal/storage"
 	"personalcloud/internal/store"
+	"personalcloud/internal/webui"
 )
 
 func TestBootstrapFlow(t *testing.T) {
@@ -70,8 +74,17 @@ func TestBootstrapFlow(t *testing.T) {
 	if correct.Code != http.StatusSeeOther || correct.Header().Get("Location") != "/bienvenida" {
 		t.Fatalf("setup correcto: status=%d location=%q", correct.Code, correct.Header().Get("Location"))
 	}
-	if findCookie(correct.Result().Cookies(), sessionCookieName) == nil {
+	session := findCookie(correct.Result().Cookies(), sessionCookieName)
+	if session == nil {
 		t.Fatal("setup correcto no creó sesión")
+	}
+
+	filesReq := httptest.NewRequest(http.MethodGet, "/archivos", nil)
+	filesReq.AddCookie(session)
+	filesPage := httptest.NewRecorder()
+	handler.ServeHTTP(filesPage, filesReq)
+	if filesPage.Code != http.StatusOK || !strings.Contains(filesPage.Body.String(), "Archivos") {
+		t.Fatalf("explorador autenticado no cargó: status=%d", filesPage.Code)
 	}
 
 	after := httptest.NewRecorder()
@@ -102,5 +115,89 @@ func TestClientIPUsesRightmostUntrustedHop(t *testing.T) {
 
 	if got := application.clientIP(req); got != "203.0.113.7" {
 		t.Fatalf("IP inesperada: %q", got)
+	}
+}
+
+func TestChooseAutoStoragePrefersSpecializedCategory(t *testing.T) {
+	views := []storage.View{
+		{ID: "mixed", Name: "Mixto", Registered: true, Online: true, Category: "mixed", Free: 900 << 30},
+		{ID: "photos", Name: "Fotos", Registered: true, Online: true, Category: "photos", Free: 100 << 30},
+		{ID: "docs", Name: "Documentos", Registered: true, Online: true, Category: "documents", Free: 500 << 30},
+	}
+	selected, ok := chooseAutoStorage(views, "IMG_001.jpg")
+	if !ok || selected.ID != "photos" {
+		t.Fatalf("debía preferir unidad de fotos; got=%+v ok=%v", selected, ok)
+	}
+	selected, ok = chooseAutoStorage(views, "factura.pdf")
+	if !ok || selected.ID != "docs" {
+		t.Fatalf("debía preferir documentos; got=%+v ok=%v", selected, ok)
+	}
+}
+
+func TestChooseAutoStorageUsesFreeSpaceBetweenEquivalentVolumes(t *testing.T) {
+	views := []storage.View{
+		{ID: "a", Name: "A", Registered: true, Online: true, Category: "photos", Free: 20 << 30},
+		{ID: "b", Name: "B", Registered: true, Online: true, Category: "photos", Free: 50 << 30},
+	}
+	selected, ok := chooseAutoStorage(views, "foto.png")
+	if !ok || selected.ID != "b" {
+		t.Fatalf("debía elegir mayor espacio libre; got=%+v ok=%v", selected, ok)
+	}
+}
+
+func TestNormalizeExplorerPathRejectsTraversal(t *testing.T) {
+	if _, err := normalizeExplorerPath("Fotos/../privado"); err == nil {
+		t.Fatal("debía rechazar traversal")
+	}
+	got, err := normalizeExplorerPath("Fotos/2026/Agosto")
+	if err != nil || got != "/Fotos/2026/Agosto" {
+		t.Fatalf("ruta válida inesperada: %q err=%v", got, err)
+	}
+}
+
+func TestBrowseCatalogDerivesFoldersWithoutMounting(t *testing.T) {
+	files := []catalog.File{
+		{ID: "1", RelativePath: "2026/Agosto/a.jpg", Name: "a.jpg", Kind: "image", Size: 10},
+		{ID: "2", RelativePath: "2026/Julio/b.jpg", Name: "b.jpg", Kind: "image", Size: 20},
+	}
+	view := storage.View{Name: "Fotos USB", VirtualRoot: "Fotos", Online: false}
+	root := browseCatalog(files, "", view)
+	if len(root) != 1 || !root[0].IsDir || root[0].Name != "2026" || !root[0].Offline {
+		t.Fatalf("directorio derivado inesperado: %+v", root)
+	}
+	agosto := browseCatalog(files, "2026/Agosto", view)
+	if len(agosto) != 1 || agosto[0].Name != "a.jpg" || agosto[0].DownloadURL == "" {
+		t.Fatalf("archivo catalogado inesperado: %+v", agosto)
+	}
+}
+
+func TestStorageTemplateExposesIndexingActions(t *testing.T) {
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := store.User{Username: "admin", Role: "admin"}
+	registered := pageData{
+		Title: "Almacenamiento", User: &user, CSRFToken: "csrf", MaxUploadBytes: 1024,
+		StorageItems: []storagePageItem{{View: storage.View{ID: "v1", Registered: true, Online: true, Name: "Fotos", Category: "photos", VirtualRoot: "Fotos", IdleTimeoutSeconds: 300, Capacity: 1000, Free: 500}}},
+	}
+	var out bytes.Buffer
+	if err := renderer.Render(&out, "storage", registered); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Indexar ahora") {
+		t.Fatal("una unidad registrada debe mostrar Indexar ahora")
+	}
+
+	detected := pageData{
+		Title: "Almacenamiento", User: &user, CSRFToken: "csrf", MaxUploadBytes: 1024,
+		StorageItems: []storagePageItem{{View: storage.View{PersistentID: "volume:test", Online: true, Name: "USB"}, SuggestedRoot: "USB"}},
+	}
+	out.Reset()
+	if err := renderer.Render(&out, "storage", detected); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Registrar e indexar") {
+		t.Fatal("una unidad detectada debe ofrecer Registrar e indexar")
 	}
 }

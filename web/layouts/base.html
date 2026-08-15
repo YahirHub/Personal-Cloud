@@ -8,6 +8,7 @@
   <title>{{.Title}} · Nube personal</title>
   <meta name="description" content="{{.Description}}">
   <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/app.js" defer></script>
 </head>
 <body class="{{if .User}}app-body{{else}}auth-body{{end}}">
   {{if .User}}{{template "sidebar" .}}{{end}}
