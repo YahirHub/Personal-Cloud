@@ -163,12 +163,23 @@
   const viewer = $('[data-media-viewer]');
   const viewerShell = $('[data-viewer-shell]', viewer);
   const stage = $('[data-viewer-stage]', viewer);
+  const videoControls = $('[data-video-controls]', viewer);
+  const videoPlayButton = $('[data-video-play]', viewer);
+  const videoPlayIcon = $('[data-video-play-icon]', viewer);
+  const videoPauseIcon = $('[data-video-pause-icon]', viewer);
+  const videoProgress = $('[data-video-progress]', viewer);
+  const videoCurrent = $('[data-video-current]', viewer);
+  const videoDuration = $('[data-video-duration]', viewer);
+  const videoMuteButton = $('[data-video-mute]', viewer);
+  const videoVolume = $('[data-video-volume]', viewer);
+  const videoSpeed = $('[data-video-speed]', viewer);
   const fullscreenButton = $('[data-viewer-fullscreen]', viewer);
   const qualityControl = $('[data-video-quality-control]', viewer);
   const qualitySelect = $('[data-video-quality]', viewer);
   const qualityStatus = $('[data-video-quality-status]', viewer);
   let currentIndex = -1;
   let currentMediaID = '';
+  let activeVideo = null;
   let zoom = 1;
   let loadingGallery = false;
   let availabilityBaseline = null;
@@ -276,11 +287,87 @@
     video.volume = preferences.volume;
     video.playbackRate = preferences.playbackRate;
   };
+  const formatMediaTime = (seconds) => {
+    const value = Number(seconds);
+    if (!Number.isFinite(value) || value < 0) return '0:00';
+    const total = Math.floor(value);
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const secs = String(total % 60).padStart(2, '0');
+    return hours ? `${hours}:${String(minutes).padStart(2, '0')}:${secs}` : `${minutes}:${secs}`;
+  };
+  const refreshVideoControls = () => {
+    const video = activeVideo;
+    if (!video) return;
+    const playing = !video.paused && !video.ended;
+    if (videoPlayIcon) videoPlayIcon.hidden = playing;
+    if (videoPauseIcon) videoPauseIcon.hidden = !playing;
+    if (videoPlayButton) {
+      videoPlayButton.title = playing ? 'Pausar' : 'Reproducir';
+      videoPlayButton.setAttribute('aria-label', playing ? 'Pausar' : 'Reproducir');
+    }
+    if (videoCurrent) videoCurrent.textContent = formatMediaTime(video.currentTime);
+    if (videoDuration) videoDuration.textContent = formatMediaTime(video.duration);
+    if (videoProgress) {
+      const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+      videoProgress.value = duration ? String(Math.round((video.currentTime / duration) * 1000)) : '0';
+      videoProgress.disabled = !duration;
+    }
+    if (videoVolume) videoVolume.value = String(video.muted ? 0 : video.volume);
+    if (videoSpeed) videoSpeed.value = String(video.playbackRate);
+    if (videoMuteButton) {
+      const muted = video.muted || video.volume === 0;
+      videoMuteButton.title = muted ? 'Activar sonido' : 'Silenciar';
+      videoMuteButton.setAttribute('aria-label', muted ? 'Activar sonido' : 'Silenciar');
+      videoMuteButton.classList.toggle('is-muted', muted);
+    }
+  };
   const configureVideo = (video) => {
+    activeVideo = video;
     applyVideoPreferences(video);
+    if (videoControls) videoControls.hidden = false;
+    ['loadedmetadata', 'durationchange', 'timeupdate', 'play', 'pause', 'ended', 'volumechange', 'ratechange'].forEach((type) => video.addEventListener(type, refreshVideoControls));
     video.addEventListener('volumechange', () => saveVideoPreferences(video));
     video.addEventListener('ratechange', () => saveVideoPreferences(video));
+    video.addEventListener('click', async () => {
+      if (video.paused) { try { await video.play(); } catch (_) {} } else video.pause();
+    });
+    video.addEventListener('dblclick', async () => {
+      try {
+        if (document.fullscreenElement) await document.exitFullscreen();
+        else if (viewerShell?.requestFullscreen) await viewerShell.requestFullscreen();
+      } catch (_) {}
+    });
+    refreshVideoControls();
   };
+  videoPlayButton?.addEventListener('click', async () => {
+    if (!activeVideo) return;
+    if (activeVideo.paused) { try { await activeVideo.play(); } catch (_) {} } else activeVideo.pause();
+  });
+  videoProgress?.addEventListener('input', () => {
+    if (!activeVideo || !Number.isFinite(activeVideo.duration) || activeVideo.duration <= 0) return;
+    activeVideo.currentTime = (Number(videoProgress.value) / 1000) * activeVideo.duration;
+    refreshVideoControls();
+  });
+  videoMuteButton?.addEventListener('click', () => {
+    if (!activeVideo) return;
+    activeVideo.muted = !activeVideo.muted;
+    saveVideoPreferences(activeVideo);
+    refreshVideoControls();
+  });
+  videoVolume?.addEventListener('input', () => {
+    if (!activeVideo) return;
+    activeVideo.volume = Math.max(0, Math.min(1, Number(videoVolume.value)));
+    activeVideo.muted = activeVideo.volume === 0;
+    saveVideoPreferences(activeVideo);
+    refreshVideoControls();
+  });
+  videoSpeed?.addEventListener('change', () => {
+    if (!activeVideo) return;
+    activeVideo.playbackRate = Number(videoSpeed.value) || 1;
+    saveVideoPreferences(activeVideo);
+    videoSpeed.blur();
+  });
 
   const setZoom = (value) => {
     zoom = Math.max(.5, Math.min(5, value));
@@ -407,9 +494,10 @@
     currentMediaID = card.dataset.mediaId || '';
     zoom = 1;
     resetQualityControl();
+    activeVideo = null;
+    if (videoControls) videoControls.hidden = true;
     viewerShell.dataset.activeKind = card.dataset.kind || '';
     $('[data-viewer-title]', viewer).textContent = card.dataset.name || '';
-    fullscreenButton.hidden = card.dataset.kind !== 'video';
 
     if (card.dataset.kind === 'image') {
       const token = currentMediaID;
@@ -442,7 +530,7 @@
       video.className = 'viewer-video';
       video.dataset.viewerVisual = '1';
       video.dataset.downloadFileId = currentMediaID;
-      video.controls = true;
+      video.controls = false;
       video.autoplay = true;
       video.playsInline = true;
       video.preload = 'metadata';
@@ -490,9 +578,12 @@
   $('[data-viewer-prev]', viewer)?.addEventListener('click', () => stepMedia(-1));
   $('[data-viewer-next]', viewer)?.addEventListener('click', () => stepMedia(1));
   fullscreenButton?.addEventListener('click', async () => {
-    const video = $('video', stage);
-    if (!video?.requestFullscreen) return;
-    try { await video.requestFullscreen(); } catch (_) {}
+    if (!activeVideo) return;
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else if (viewerShell?.requestFullscreen) await viewerShell.requestFullscreen();
+      else if (typeof activeVideo.webkitEnterFullscreen === 'function') activeVideo.webkitEnterFullscreen();
+    } catch (_) {}
   });
   viewer?.addEventListener('close', () => {
     $$('video,audio', stage).forEach((media) => { media.pause(); media.removeAttribute('src'); media.load(); });
@@ -500,23 +591,28 @@
     currentMediaID = '';
     zoom = 1;
     resetQualityControl();
+    activeVideo = null;
+    if (videoControls) videoControls.hidden = true;
     viewerShell?.classList.remove('is-media-loading');
     if (viewerShell) viewerShell.dataset.activeKind = '';
   });
   viewer?.addEventListener('click', (event) => { if (event.target === viewer) viewer.close(); });
   const handleViewerKeydown = (event) => {
     if (!viewer?.open || event.ctrlKey || event.metaKey || event.altKey) return;
-    const tag = document.activeElement?.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    const active = document.activeElement;
+    const tag = active?.tagName;
+    if (active?.isContentEditable || tag === 'TEXTAREA') return;
+    if (tag === 'INPUT' && !['range', 'button'].includes((active.type || '').toLowerCase())) return;
+    if (tag === 'SELECT') return;
     const key = event.key.toLowerCase();
     if (key === 'arrowleft' || key === 'a') { event.preventDefault(); event.stopPropagation(); stepMedia(-1); }
     else if (key === 'arrowright' || key === 'd') { event.preventDefault(); event.stopPropagation(); stepMedia(1); }
     else if (key === 'w') { event.preventDefault(); event.stopPropagation(); setZoom(zoom + .15); }
     else if (key === 's') { event.preventDefault(); event.stopPropagation(); setZoom(zoom - .15); }
+    else if ((key === ' ' || key === 'spacebar') && activeVideo) { event.preventDefault(); event.stopPropagation(); if (activeVideo.paused) activeVideo.play().catch(() => {}); else activeVideo.pause(); }
     else if (key === 'escape') { event.preventDefault(); viewer.close(); }
   };
-  // Los controles nativos de <video>/<audio> pueden consumir keydown en su shadow UI.
-  // Capturar en window mantiene los atajos del visor incluso después de usar seek o volumen.
+  // Capturar en window mantiene los atajos del visor incluso con foco en rangos de seek/volumen.
   window.addEventListener('keydown', handleViewerKeydown, true);
 
   // Oculta inmediatamente medios cuya unidad se desconectó; una reconexión refresca el catálogo visible.
@@ -624,6 +720,7 @@
 
   // Selección múltiple reutilizable en Galería y Archivos.
   const selectedIDs = new Set();
+  const selectionMenu = $('[data-selection-menu]');
   const bulkToolbar = $('[data-bulk-toolbar]');
   const selectionCount = $('[data-selection-count]');
   const moveDialog = $('[data-move-dialog]');
@@ -684,7 +781,49 @@
     if (selectedIDs.has(id)) selectedIDs.delete(id); else selectedIDs.add(id);
     refreshSelectionUI();
   };
-  $$('[data-toggle-selection]').forEach((button) => button.addEventListener('click', () => setSelectionMode(!document.body.classList.contains('selection-mode'))));
+  const hideSelectionMenu = () => { if (selectionMenu) selectionMenu.hidden = true; };
+  const showSelectionMenu = (trigger) => {
+    if (!selectionMenu || !trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    selectionMenu.hidden = false;
+    const width = selectionMenu.offsetWidth || 210;
+    const height = selectionMenu.offsetHeight || 96;
+    selectionMenu.style.left = `${Math.max(8, Math.min(window.innerWidth - width - 8, rect.right - width))}px`;
+    selectionMenu.style.top = `${Math.max(8, Math.min(window.innerHeight - height - 8, rect.bottom + 8))}px`;
+  };
+  $$('[data-open-selection-menu]').forEach((button) => button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (selectionMenu && !selectionMenu.hidden) hideSelectionMenu(); else showSelectionMenu(button);
+  }));
+  $('[data-selection-start]', selectionMenu)?.addEventListener('click', () => {
+    hideSelectionMenu();
+    setSelectionMode(true);
+  });
+  const selectEverythingAvailable = async () => {
+    hideSelectionMenu();
+    setSelectionMode(true);
+    const maxItems = 500;
+    // En modo continuo, completa el listado hasta el límite seguro de operaciones masivas.
+    while ($$('[data-selectable-file]').filter((item) => item.dataset.offline !== 'true').length < maxItems) {
+      const galleryHasMore = grid?.dataset.mode === 'infinito' && grid.dataset.hasMore === 'true';
+      const filesHaveMore = fileList?.dataset.mode === 'infinito' && fileList.dataset.hasMore === 'true';
+      if (!galleryHasMore && !filesHaveMore) break;
+      const before = $$('[data-selectable-file]').length;
+      if (galleryHasMore) await loadMoreGallery();
+      else if (filesHaveMore) await loadMoreFiles();
+      if ($$('[data-selectable-file]').length <= before) break;
+    }
+    selectedIDs.clear();
+    const available = $$('[data-selectable-file]').filter((item) => item.dataset.offline !== 'true');
+    available.slice(0, maxItems).forEach((item) => selectedIDs.add(item.dataset.selectableFile));
+    refreshSelectionUI();
+    const moreRemain = (grid?.dataset.hasMore === 'true') || (fileList?.dataset.hasMore === 'true') || available.length > maxItems;
+    if (moreRemain) window.alert('Se seleccionaron los primeros 500 elementos disponibles, que es el límite seguro por operación.');
+  };
+  $('[data-selection-all]', selectionMenu)?.addEventListener('click', () => { selectEverythingAvailable(); });
+  document.addEventListener('click', (event) => { if (!event.target.closest('[data-selection-menu]') && !event.target.closest('[data-open-selection-menu]')) hideSelectionMenu(); });
+  window.addEventListener('resize', hideSelectionMenu);
+  window.addEventListener('blur', hideSelectionMenu);
   $$('[data-confirm-damaged]').forEach((form) => form.addEventListener('submit', (event) => {
     if (!window.confirm('¿Eliminar permanentemente los elementos dañados de esta unidad? Esta acción no se puede deshacer.')) event.preventDefault();
   }));

@@ -16,7 +16,7 @@
   <main class="{{if .User}}app-main{{else}}auth-main{{end}}">
     {{template "content" .}}
   </main>
-  {{if .User}}{{template "download-context" .}}{{end}}
+  {{if .User}}{{template "download-context" .}}{{template "selection-menu" .}}{{end}}
 </body>
 </html>
 {{end}}

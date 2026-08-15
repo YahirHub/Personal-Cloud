@@ -359,7 +359,7 @@ func TestTemplatesExposeBulkSelectionAndSettings(t *testing.T) {
 	if err := renderer.Render(&out, "photos", gallery); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"data-toggle-selection", "data-bulk-toolbar", "data-move-dialog", "Dañado"} {
+	for _, want := range []string{"data-open-selection-menu", "Seleccionar todo", "data-bulk-toolbar", "data-move-dialog", "Dañado"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("galería sin %q", want)
 		}

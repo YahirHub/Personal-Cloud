@@ -87,16 +87,19 @@ func TestViewerPredecodesImagesBeforeSwap(t *testing.T) {
 	}
 }
 
-func TestGalleryIncludesVideoQualitySelector(t *testing.T) {
+func TestGalleryIncludesBottomVideoControls(t *testing.T) {
 	data, err := fs.ReadFile(Assets, "pages/photos.html")
 	if err != nil {
 		t.Fatal(err)
 	}
 	template := string(data)
-	for _, expected := range []string{"data-video-quality-control", "data-video-quality", "data-video-quality-status"} {
+	for _, expected := range []string{"data-video-controls", "data-video-progress", "data-video-play", "data-video-volume", "data-video-quality-control", "data-video-quality", "data-viewer-fullscreen"} {
 		if !strings.Contains(template, expected) {
-			t.Fatalf("el visor de video debe exponer selector de calidad; falta %q", expected)
+			t.Fatalf("el visor de video debe integrar controles inferiores; falta %q", expected)
 		}
+	}
+	if strings.Contains(template, "viewer-fullscreen icon-button") || strings.Contains(template, "viewer-quality\"") {
+		t.Fatal("calidad y fullscreen no deben volver a controles flotantes separados")
 	}
 }
 
@@ -107,7 +110,8 @@ func TestBulkSelectionAndTouchActionsAreEmbedded(t *testing.T) {
 	}
 	js := string(data)
 	for _, expected := range []string{
-		"data-toggle-selection",
+		"data-open-selection-menu",
+		"data-selection-all",
 		"data-bulk-download",
 		"data-bulk-move",
 		"data-bulk-delete",
@@ -117,6 +121,25 @@ func TestBulkSelectionAndTouchActionsAreEmbedded(t *testing.T) {
 	} {
 		if !strings.Contains(js, expected) {
 			t.Fatalf("faltó comportamiento offline/reutilizable %q", expected)
+		}
+	}
+}
+
+func TestCustomVideoPlayerUsesLocalControls(t *testing.T) {
+	data, err := fs.ReadFile(Assets, "static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	js := string(data)
+	for _, expected := range []string{
+		"video.controls = false",
+		"const refreshVideoControls",
+		"viewerShell.requestFullscreen",
+		"data-selection-all",
+		"const selectEverythingAvailable",
+	} {
+		if !strings.Contains(js, expected) {
+			t.Fatalf("faltó comportamiento del reproductor/selección %q", expected)
 		}
 	}
 }

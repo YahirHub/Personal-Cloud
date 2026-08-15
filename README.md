@@ -25,11 +25,12 @@ Implementado:
 - Miniaturas de hasta 320 px y previews de hasta 1600 px para JPEG/PNG/GIF; se respeta EXIF Orientation y FFmpeg amplía formatos de imagen cuando está disponible.
 - Galería `/galeria` que usa la caché interna aunque el disco original esté desmontado y oculta medios de unidades físicamente desconectadas.
 - Filtro compacto por imágenes/video/audio y orden por fecha de archivo, fecha de incorporación o nombre.
-- Visor offline de imagen/video/audio centrado a viewport completo, con navegación ←/→ o A/D, zoom suave W/S y pantalla completa para video.
+- Visor offline de imagen/video/audio centrado a viewport completo, con navegación ←/→ o A/D, zoom suave W/S y reproductor de video con controles inferiores propios (play, seek, volumen, velocidad, calidad y fullscreen).
 - Preferencias locales persistentes del reproductor de video: mute, volumen y velocidad.
 - Calidad de video seleccionable Original/360p/480p/720p/1080p cuando FFmpeg + libx264 están disponibles; las variantes se generan bajo demanda y se cachean localmente.
 - Descarga por clic derecho mediante ticket AES-GCM opaco, ligado al usuario y de vida corta; las URLs no revelan ruta, storage ID ni nombre del archivo.
 - Scroll infinito por defecto o paginación persistente mediante un componente de listado reutilizable.
+- Menú `⋯` reutilizable en Galería/Archivos con **Seleccionar** y **Seleccionar todo**; la selección total carga elementos del modo continuo hasta el límite seguro de 500 por operación.
 - Apertura del original mediante montaje bajo demanda.
 - Upload contextual mediante botón/widget dentro de la carpeta actual de `/archivos/ver/...`.
 - Registro de unidad con primera indexación automática y reindexación manual visible.
