@@ -153,3 +153,35 @@ func TestAuditCleanupKeepsNewestRows(t *testing.T) {
 		t.Fatalf("esperaba 2 eventos, obtuvo %d", lines)
 	}
 }
+
+func TestOpenMigratesVersion1WithoutLosingUser(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	legacy := `{"version":1,"users":[{"id":"u1","username":"admin","password_hash":"hash","role":"admin","onboarding_completed":true,"created_at":"2026-08-15T12:00:00Z"}],"sessions":[]}`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	storage, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer storage.Close()
+	user, err := storage.UserByUsername(context.Background(), "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !user.OnboardingCompleted {
+		t.Fatal("la migración perdió el onboarding existente")
+	}
+	if storage.state.Version != 2 {
+		t.Fatalf("versión migrada inesperada: %d", storage.state.Version)
+	}
+}
+
+func TestVirtualRootAllowsOrdinaryXAndZero(t *testing.T) {
+	for _, root := range []string{"Fotos2026", "Xbox", "Disco0"} {
+		if !validVirtualRoot(root) {
+			t.Fatalf("raíz válida rechazada: %q", root)
+		}
+	}
+}

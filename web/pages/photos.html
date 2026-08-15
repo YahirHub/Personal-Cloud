@@ -4,12 +4,33 @@
     <div>
       <div class="eyebrow">Catálogo</div>
       <h1>Fotos</h1>
-      <p class="muted">Las miniaturas quedarán disponibles en el almacenamiento interno incluso cuando el disco del original esté desmontado.</p>
+      <p class="muted">Estas miniaturas viven en el almacenamiento interno. Abrir el original monta automáticamente la unidad correspondiente.</p>
     </div>
   </header>
-  <div class="photo-skeleton-grid" aria-hidden="true">
-    <div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div>
+
+  {{if .Photos}}
+  <div class="photo-grid">
+    {{range .Photos}}
+    <a class="photo-card" href="{{.OriginalURL}}" target="_blank" rel="noopener" title="Abrir original: {{.Name}}">
+      {{if .ThumbnailURL}}
+      <img src="{{.ThumbnailURL}}" loading="lazy" alt="{{.Name}}">
+      {{else}}
+      <div class="photo-placeholder">Sin miniatura</div>
+      {{end}}
+      <div class="photo-meta"><strong>{{.Name}}</strong><small>{{formatTime .ModTime}} · {{formatBytes .Size}}</small></div>
+    </a>
+    {{end}}
   </div>
-  <p class="center muted">El indexador y generador de miniaturas se implementarán sobre el catálogo de almacenamiento.</p>
+  <div class="pagination-row">
+    {{if gt .PhotoOffset 0}}<a class="button button-secondary" href="/fotos">Inicio</a>{{end}}
+    {{if .PhotoHasMore}}<a class="button button-primary" href="/fotos?desde={{.PhotoNext}}">Cargar más</a>{{end}}
+  </div>
+  {{else}}
+  <div class="empty-state">
+    <div class="empty-icon">▧</div>
+    <h2>El catálogo de fotos está vacío</h2>
+    <p>Registra una unidad y pulsa <strong>Indexar</strong>. JPEG, PNG y GIF generan miniatura y preview local; otros formatos de imagen se catalogan aunque todavía no tengan decoder integrado.</p>
+  </div>
+  {{end}}
 </section>
 {{end}}

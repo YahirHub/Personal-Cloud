@@ -22,7 +22,7 @@ var (
 	ErrAdminExists = errors.New("ya existe un administrador")
 )
 
-const stateVersion = 1
+const stateVersion = 2
 
 type Store struct {
 	mu        sync.RWMutex
@@ -32,9 +32,10 @@ type Store struct {
 }
 
 type persistedState struct {
-	Version  int       `json:"version"`
-	Users    []User    `json:"users"`
-	Sessions []Session `json:"sessions"`
+	Version  int             `json:"version"`
+	Users    []User          `json:"users"`
+	Sessions []Session       `json:"sessions"`
+	Volumes  []StorageVolume `json:"volumes,omitempty"`
 }
 
 type User struct {
@@ -44,6 +45,26 @@ type User struct {
 	Role                string    `json:"role"`
 	OnboardingCompleted bool      `json:"onboarding_completed"`
 	CreatedAt           time.Time `json:"created_at"`
+}
+
+type StorageVolume struct {
+	ID                  string    `json:"id"`
+	PersistentID        string    `json:"persistent_id"`
+	IdentityStable      bool      `json:"identity_stable"`
+	Name                string    `json:"name"`
+	Label               string    `json:"label,omitempty"`
+	Platform            string    `json:"platform"`
+	Device              string    `json:"device,omitempty"`
+	VolumeName          string    `json:"volume_name,omitempty"`
+	PreferredMountPoint string    `json:"preferred_mount_point,omitempty"`
+	FSType              string    `json:"fs_type,omitempty"`
+	Category            string    `json:"category"`
+	VirtualRoot         string    `json:"virtual_root"`
+	IdleTimeoutSeconds  int       `json:"idle_timeout_seconds"`
+	AutoUnmount         bool      `json:"auto_unmount"`
+	ReadOnly            bool      `json:"read_only"`
+	RegisteredAt        time.Time `json:"registered_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 type Session struct {
@@ -259,6 +280,18 @@ func (s *Store) DeleteExpiredSessions(ctx context.Context) error {
 		return err
 	}
 	now := time.Now().UTC()
+	s.mu.RLock()
+	hasExpired := false
+	for _, session := range s.state.Sessions {
+		if !session.ExpiresAt.After(now) {
+			hasExpired = true
+			break
+		}
+	}
+	s.mu.RUnlock()
+	if !hasExpired {
+		return nil
+	}
 	return s.mutate(ctx, func(next *persistedState) error {
 		filtered := next.Sessions[:0]
 		for _, session := range next.Sessions {
@@ -331,6 +364,7 @@ func (s *Store) CleanupAudit(ctx context.Context, retention time.Duration, maxRo
 		cutoff = time.Now().UTC().Add(-retention)
 	}
 	events := make([]AuditEvent, 0, 1024)
+	changed := false
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 1<<20)
 	for scanner.Scan() {
@@ -342,6 +376,7 @@ func (s *Store) CleanupAudit(ctx context.Context, retention time.Duration, maxRo
 			return fmt.Errorf("auditoría dañada: %w", err)
 		}
 		if !cutoff.IsZero() && event.CreatedAt.Before(cutoff) {
+			changed = true
 			continue
 		}
 		events = append(events, event)
@@ -351,6 +386,10 @@ func (s *Store) CleanupAudit(ctx context.Context, retention time.Duration, maxRo
 	}
 	if maxRows > 0 && len(events) > maxRows {
 		events = events[len(events)-maxRows:]
+		changed = true
+	}
+	if !changed {
+		return nil
 	}
 
 	var data []byte
@@ -394,6 +433,7 @@ func cloneState(state persistedState) persistedState {
 		Version:  state.Version,
 		Users:    append([]User(nil), state.Users...),
 		Sessions: append([]Session(nil), state.Sessions...),
+		Volumes:  append([]StorageVolume(nil), state.Volumes...),
 	}
 }
 

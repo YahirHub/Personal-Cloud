@@ -4,13 +4,137 @@
     <div>
       <div class="eyebrow">Discos y medios</div>
       <h1>Almacenamiento</h1>
-      <p class="muted">Aquí se administrarán unidades, categorías, prioridad, espacio y desmontaje por inactividad.</p>
+      <p class="muted">Las unidades registradas conservan una identidad persistente y pueden desmontarse automáticamente cuando dejan de tener operaciones activas.</p>
     </div>
   </header>
+
+  {{if .Info}}<div class="alert alert-success">{{.Info}}</div>{{end}}
+  {{if .Error}}<div class="alert alert-error">{{.Error}}</div>{{end}}
+  {{if .StorageError}}<div class="alert alert-error">La detección del sistema reportó: {{.StorageError}}</div>{{end}}
+
+  {{if not .StorageItems}}
   <div class="empty-state">
     <div class="empty-icon">+</div>
-    <h2>Aún no hay unidades registradas</h2>
-    <p>La detección automática y el registro seguro de medios forman el siguiente bloque de implementación.</p>
+    <h2>No se detectaron unidades candidatas</h2>
+    <p>Conecta un HDD, SSD o memoria externa y vuelve a cargar esta pantalla. La unidad del sistema se excluye del registro.</p>
+  </div>
+  {{end}}
+
+  <div class="storage-grid">
+  {{range .StorageItems}}
+    {{if .Registered}}
+    <article class="storage-card">
+      <div class="storage-card-head">
+        <div>
+          <div class="eyebrow">{{categoryLabel .Category}}</div>
+          <h2>{{.Name}}</h2>
+          <div class="status-line"><span class="status-dot {{statusClass .Status}}"></span>{{.Status}}</div>
+        </div>
+        <div class="storage-capacity">
+          {{if gt .Capacity 0}}<strong>{{formatBytes .Free}} libres</strong><small>de {{formatBytes .Capacity}} · {{percent .Free .Capacity}}% usado</small>{{else}}<strong>Sin lectura de capacidad</strong><small>La unidad puede estar desmontada</small>{{end}}
+        </div>
+      </div>
+
+      <dl class="meta-grid">
+        <div><dt>Raíz virtual</dt><dd>/{{.VirtualRoot}}</dd></div>
+        <div><dt>Filesystem</dt><dd>{{if .FSType}}{{.FSType}}{{else}}—{{end}}</dd></div>
+        <div><dt>Montaje</dt><dd>{{if .MountPoint}}{{.MountPoint}}{{else}}desmontado{{end}}</dd></div>
+        <div><dt>Idle</dt><dd>{{if .AutoUnmount}}{{formatDuration .IdleTimeoutSeconds}}{{else}}manual{{end}}</dd></div>
+      </dl>
+
+      {{if .Error}}<div class="alert alert-error">{{.Error}}</div>{{end}}
+      {{if eq .Job.State "queued"}}<div class="alert">Indexación en cola.</div>{{end}}
+      {{if eq .Job.State "scanning"}}<div class="alert">Indexando: {{.Job.Scanned}} archivos · {{.Job.Images}} imágenes.</div>{{end}}
+      {{if eq .Job.State "done"}}<div class="alert alert-success">Última indexación: {{.Job.Scanned}} archivos procesados.</div>{{end}}
+      {{if eq .Job.State "error"}}<div class="alert alert-error">Indexación: {{.Job.Error}}</div>{{end}}
+
+      <div class="button-row wrap">
+        <form method="post" action="/almacenamiento/{{.ID}}/indexar">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button class="button button-primary" type="submit">Indexar</button>
+        </form>
+        {{if .Mounted}}
+        <form method="post" action="/almacenamiento/{{.ID}}/desmontar">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button class="button button-secondary" type="submit">Desmontar</button>
+        </form>
+        {{else if .Online}}
+        <form method="post" action="/almacenamiento/{{.ID}}/montar">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button class="button button-secondary" type="submit">Montar</button>
+        </form>
+        {{end}}
+      </div>
+
+      <details class="storage-details">
+        <summary>Configuración</summary>
+        <form class="form-grid" method="post" action="/almacenamiento/{{.ID}}/configuracion">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <label>Nombre<input name="name" value="{{.Name}}" required maxlength="80"></label>
+          <label>Raíz virtual<input name="virtual_root" value="{{.VirtualRoot}}" required maxlength="80"></label>
+          <label>Categoría
+            <select name="category">
+              <option value="documents" {{if eq .Category "documents"}}selected{{end}}>Documentos</option>
+              <option value="photos" {{if eq .Category "photos"}}selected{{end}}>Fotos</option>
+              <option value="multimedia" {{if eq .Category "multimedia"}}selected{{end}}>Multimedia</option>
+              <option value="mixed" {{if eq .Category "mixed"}}selected{{end}}>Mixto</option>
+            </select>
+          </label>
+          <label>Desmontar tras (segundos)<input type="number" name="idle_seconds" value="{{.IdleTimeoutSeconds}}" min="30" max="604800"></label>
+          <label class="check"><input type="checkbox" name="auto_unmount" {{if .AutoUnmount}}checked{{end}}> Desmontaje automático</label>
+          <label class="check"><input type="checkbox" name="read_only" {{if .ReadOnly}}checked{{end}}> Solo lectura</label>
+          <button class="button button-secondary" type="submit">Guardar</button>
+        </form>
+      </details>
+
+      {{if and .Online (not .ReadOnly)}}
+      <details class="storage-details">
+        <summary>Subir archivo a esta unidad</summary>
+        <form class="form-grid" method="post" action="/almacenamiento/{{.ID}}/subir" enctype="multipart/form-data">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <label>Carpeta relativa<input name="target_dir" placeholder="Ej. 2026/Agosto"></label>
+          <label>Archivo<input type="file" name="file" required></label>
+          <small>Máximo configurado: {{formatBytes $.MaxUploadBytes}}. La categoría de la unidad limita los tipos permitidos.</small>
+          <button class="button button-primary" type="submit">Subir</button>
+        </form>
+      </details>
+      {{end}}
+    </article>
+    {{else}}
+    <article class="storage-card storage-card-detected">
+      <div class="storage-card-head">
+        <div>
+          <div class="eyebrow">Detectada</div>
+          <h2>{{.Name}}</h2>
+          <div class="status-line"><span class="status-dot status-online"></span>{{if .Mounted}}Montada{{else}}Disponible{{end}}</div>
+        </div>
+        {{if gt .Capacity 0}}<div class="storage-capacity"><strong>{{formatBytes .Free}} libres</strong><small>de {{formatBytes .Capacity}}</small></div>{{end}}
+      </div>
+      <dl class="meta-grid">
+        <div><dt>Identidad</dt><dd class="break-all">{{.PersistentID}}</dd></div>
+        <div><dt>Montaje actual</dt><dd>{{if .MountPoint}}{{.MountPoint}}{{else}}—{{end}}</dd></div>
+      </dl>
+      <form class="form-grid" method="post" action="/almacenamiento/registrar">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <input type="hidden" name="persistent_id" value="{{.PersistentID}}">
+        <label>Nombre<input name="name" value="{{.Name}}" required maxlength="80"></label>
+        <label>Raíz virtual<input name="virtual_root" value="{{.SuggestedRoot}}" required maxlength="80"><small>Será la carpeta superior que verás por WebDAV.</small></label>
+        <label>Categoría
+          <select name="category">
+            <option value="mixed">Mixto</option>
+            <option value="documents">Documentos</option>
+            <option value="photos">Fotos</option>
+            <option value="multimedia">Multimedia</option>
+          </select>
+        </label>
+        <label>Desmontar tras (segundos)<input type="number" name="idle_seconds" value="300" min="30" max="604800"></label>
+        <label class="check"><input type="checkbox" name="auto_unmount" checked> Desmontaje automático</label>
+        <label class="check"><input type="checkbox" name="read_only"> Solo lectura</label>
+        <button class="button button-primary" type="submit">Registrar unidad</button>
+      </form>
+    </article>
+    {{end}}
+  {{end}}
   </div>
 </section>
 {{end}}

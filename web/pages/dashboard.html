@@ -4,20 +4,29 @@
     <div>
       <div class="eyebrow">Panel</div>
       <h1>Hola, {{.User.Username}}</h1>
-      <p class="muted">La base del servidor ya está lista. Los módulos de almacenamiento se irán conectando sobre este núcleo.</p>
+      <p class="muted">Tu nube presenta varios medios físicos como un único servicio y mantiene los originales fríos hasta que realmente los necesitas.</p>
     </div>
   </header>
 
-  <div class="stats-grid">
-    <article class="stat-card"><span>Unidades</span><strong>0</strong><small>Sin medios registrados</small></article>
-    <article class="stat-card"><span>Archivos</span><strong>0</strong><small>Catálogo aún vacío</small></article>
-    <article class="stat-card"><span>Estado</span><strong>Listo</strong><small>Servidor operativo</small></article>
+  <div class="stats-grid stats-grid-4">
+    <article class="stat-card"><span>Unidades</span><strong>{{.Stats.Volumes}}</strong><small>{{.Stats.Online}} conectadas</small></article>
+    <article class="stat-card"><span>Archivos</span><strong>{{.Stats.Files}}</strong><small>{{formatBytes .Stats.Bytes}} catalogados</small></article>
+    <article class="stat-card"><span>Fotos</span><strong>{{.Stats.Photos}}</strong><small>Miniaturas en almacenamiento interno</small></article>
+    <article class="stat-card"><span>Estado</span><strong>Operativo</strong><small>Healthcheck: /salud</small></article>
   </div>
 
   <div class="panel">
-    <h2>Siguiente paso</h2>
-    <p>Registrar unidades físicas, detectar su identidad persistente y comenzar el catálogo sin mantener los discos montados permanentemente.</p>
-    <a class="button button-secondary" href="/almacenamiento">Abrir almacenamiento</a>
+    <h2>Almacenamiento por demanda</h2>
+    <p>Registra una unidad, define su categoría y raíz virtual, después inicia la indexación. Las miniaturas quedan disponibles aunque el disco vuelva a desmontarse.</p>
+    <div class="button-row">
+      <a class="button button-secondary" href="/almacenamiento">Administrar unidades</a>
+      <a class="button button-ghost" href="/fotos">Abrir fotos</a>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>WebDAV</h2>
+    <p>El servidor está publicado en <code>/webdav/</code> y reutiliza el mismo usuario y contraseña de la web. Fuera del equipo local exige HTTPS por defecto.</p>
   </div>
 </section>
 {{end}}

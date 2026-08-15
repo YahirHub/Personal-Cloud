@@ -16,6 +16,9 @@ func (a *App) securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+		if a.cfg.RequireHTTPS && a.requestIsHTTPS(r) {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -50,4 +53,20 @@ func (a *App) currentUser(r *http.Request) (*store.User, error) {
 		return nil, err
 	}
 	return &user, nil
+}
+
+func (a *App) enforceHTTPS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !a.cfg.RequireHTTPS || a.requestIsHTTPS(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		host := r.Host
+		if host == "" {
+			http.Error(w, "HTTPS requerido.", http.StatusUpgradeRequired)
+			return
+		}
+		target := "https://" + host + r.URL.RequestURI()
+		http.Redirect(w, r, target, http.StatusPermanentRedirect)
+	})
 }

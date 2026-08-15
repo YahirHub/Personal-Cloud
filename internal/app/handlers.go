@@ -245,28 +245,6 @@ func (a *App) onboardingCompletePost(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/inicio", http.StatusSeeOther)
 }
 
-func (a *App) dashboardGet(w http.ResponseWriter, r *http.Request) {
-	user := userFromContext(r.Context())
-	if !user.OnboardingCompleted {
-		http.Redirect(w, r, "/bienvenida", http.StatusSeeOther)
-		return
-	}
-	data := a.csrfData(w, r, pageData{Title: "Inicio", Description: "Resumen de tu nube personal.", CurrentPath: "/inicio", User: user})
-	a.render(w, http.StatusOK, "dashboard", data)
-}
-
-func (a *App) storageGet(w http.ResponseWriter, r *http.Request) {
-	user := userFromContext(r.Context())
-	data := a.csrfData(w, r, pageData{Title: "Almacenamiento", Description: "Tus unidades y políticas de almacenamiento aparecerán aquí.", CurrentPath: "/almacenamiento", User: user})
-	a.render(w, http.StatusOK, "storage", data)
-}
-
-func (a *App) photosGet(w http.ResponseWriter, r *http.Request) {
-	user := userFromContext(r.Context())
-	data := a.csrfData(w, r, pageData{Title: "Fotos", Description: "El catálogo de miniaturas se integrará sobre el almacenamiento virtual.", CurrentPath: "/fotos", User: user})
-	a.render(w, http.StatusOK, "photos", data)
-}
-
 func (a *App) parseProtectedForm(w http.ResponseWriter, r *http.Request) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
 	if err := r.ParseForm(); err != nil {

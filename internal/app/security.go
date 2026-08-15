@@ -45,15 +45,18 @@ func (a *App) ensureCSRF(w http.ResponseWriter, r *http.Request) string {
 }
 
 func (a *App) validCSRF(r *http.Request) bool {
+	return a.validCSRFValue(r, r.PostFormValue("csrf_token"))
+}
+
+func (a *App) validCSRFValue(r *http.Request, token string) bool {
 	cookie, err := r.Cookie(csrfCookieName)
 	if err != nil || cookie.Value == "" {
 		return false
 	}
-	formToken := r.PostFormValue("csrf_token")
-	if len(cookie.Value) != len(formToken) || formToken == "" {
+	if len(cookie.Value) != len(token) || token == "" {
 		return false
 	}
-	return subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(formToken)) == 1
+	return subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(token)) == 1
 }
 
 func (a *App) createLoginSession(w http.ResponseWriter, r *http.Request, userID string) error {

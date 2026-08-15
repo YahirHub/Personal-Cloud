@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
 	"fmt"
 	"log/slog"
@@ -13,9 +14,14 @@ import (
 	"time"
 
 	"personalcloud/internal/auth"
+	"personalcloud/internal/backup"
+	"personalcloud/internal/catalog"
 	"personalcloud/internal/config"
 	"personalcloud/internal/ratelimit"
+	storagepkg "personalcloud/internal/storage"
 	"personalcloud/internal/store"
+	"personalcloud/internal/vfs"
+	webdavserver "personalcloud/internal/webdav"
 	"personalcloud/internal/webui"
 )
 
@@ -28,19 +34,36 @@ type App struct {
 	setupCode         string
 	dummyPasswordHash string
 	mux               *http.ServeMux
+	storageManager    *storagepkg.Manager
+	catalog           *catalog.Catalog
+	indexer           *catalog.Indexer
+	vfs               *vfs.FS
+	webdav            *webdavserver.Server
+	davAuthMu         sync.Mutex
+	davAuthSecret     [32]byte
+	davAuthCache      map[string]davAuthCacheEntry
+	lastBackupDay     string
 	stop              chan struct{}
 	stopOnce          sync.Once
 }
 
 type pageData struct {
-	Title       string
-	Description string
-	CurrentPath string
-	CSRFToken   string
-	Error       string
-	Info        string
-	User        *store.User
-	RetryAfter  int
+	Title          string
+	Description    string
+	CurrentPath    string
+	CSRFToken      string
+	Error          string
+	Info           string
+	User           *store.User
+	RetryAfter     int
+	StorageItems   []storagePageItem
+	StorageError   string
+	Stats          dashboardStats
+	Photos         []photoPageItem
+	PhotoOffset    int
+	PhotoNext      int
+	PhotoHasMore   bool
+	MaxUploadBytes int64
 }
 
 type contextKey string
@@ -68,6 +91,25 @@ func New(cfg config.Config, storage *store.Store, logger *slog.Logger) (*App, er
 		return nil, fmt.Errorf("preparar autenticación: %w", err)
 	}
 
+	catalogStore, err := catalog.Open(cfg.DataDir)
+	if err != nil {
+		return nil, fmt.Errorf("abrir catálogo: %w", err)
+	}
+	storageManager := storagepkg.NewManager(storage, logger, cfg.MountRoot)
+	virtualFS := vfs.New(storageManager, storage)
+	indexer := catalog.NewIndexer(catalogStore, storageManager, logger)
+	dav := webdavserver.New(virtualFS, "/webdav", cfg.MaxUploadBytes)
+	dav.OnMutation = func(ctx context.Context, virtualPath string) {
+		storageID, err := virtualFS.StorageID(ctx, virtualPath)
+		if err == nil {
+			indexer.Enqueue(storageID)
+		}
+	}
+	var davAuthSecret [32]byte
+	if _, err := rand.Read(davAuthSecret[:]); err != nil {
+		return nil, fmt.Errorf("preparar caché de autenticación WebDAV: %w", err)
+	}
+
 	a := &App{
 		cfg:               cfg,
 		store:             storage,
@@ -76,6 +118,13 @@ func New(cfg config.Config, storage *store.Store, logger *slog.Logger) (*App, er
 		limiter:           ratelimit.New(),
 		mux:               http.NewServeMux(),
 		dummyPasswordHash: dummyHash,
+		storageManager:    storageManager,
+		catalog:           catalogStore,
+		indexer:           indexer,
+		vfs:               virtualFS,
+		webdav:            dav,
+		davAuthSecret:     davAuthSecret,
+		davAuthCache:      make(map[string]davAuthCacheEntry),
 		stop:              make(chan struct{}),
 	}
 
@@ -97,11 +146,22 @@ func New(cfg config.Config, storage *store.Store, logger *slog.Logger) (*App, er
 }
 
 func (a *App) Handler() http.Handler {
-	return a.securityHeaders(a.requestLog(a.mux))
+	return a.securityHeaders(a.requestLog(a.enforceHTTPS(a.mux)))
 }
 
 func (a *App) Close() {
-	a.stopOnce.Do(func() { close(a.stop) })
+	a.stopOnce.Do(func() {
+		close(a.stop)
+		if a.indexer != nil {
+			a.indexer.Close()
+		}
+		if a.storageManager != nil {
+			a.storageManager.Close()
+		}
+		if a.catalog != nil {
+			_ = a.catalog.Close()
+		}
+	})
 }
 
 func (a *App) routes() {
@@ -111,7 +171,7 @@ func (a *App) routes() {
 	}
 	a.mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
-	a.mux.HandleFunc("GET /", a.home)
+	a.mux.HandleFunc("GET /{$}", a.home)
 	a.mux.HandleFunc("GET /setup", a.setupGet)
 	a.mux.HandleFunc("POST /setup", a.setupPost)
 	a.mux.HandleFunc("GET /iniciar-sesion", a.loginGet)
@@ -122,9 +182,22 @@ func (a *App) routes() {
 	a.mux.Handle("GET /inicio", a.requireAuth(http.HandlerFunc(a.dashboardGet)))
 	a.mux.Handle("GET /almacenamiento", a.requireAuth(http.HandlerFunc(a.storageGet)))
 	a.mux.Handle("GET /fotos", a.requireAuth(http.HandlerFunc(a.photosGet)))
+	a.mux.Handle("GET /fotos/{id}/miniatura", a.requireAuth(http.HandlerFunc(a.photoThumbnailGet)))
+	a.mux.Handle("GET /fotos/{id}/vista-previa", a.requireAuth(http.HandlerFunc(a.photoPreviewGet)))
+	a.mux.Handle("GET /archivos/{id}/original", a.requireAuth(http.HandlerFunc(a.originalFileGet)))
+	a.mux.Handle("POST /almacenamiento/registrar", a.requireAuth(http.HandlerFunc(a.storageRegisterPost)))
+	a.mux.Handle("POST /almacenamiento/{id}/configuracion", a.requireAuth(http.HandlerFunc(a.storageUpdatePost)))
+	a.mux.Handle("POST /almacenamiento/{id}/montar", a.requireAuth(http.HandlerFunc(a.storageMountPost)))
+	a.mux.Handle("POST /almacenamiento/{id}/desmontar", a.requireAuth(http.HandlerFunc(a.storageUnmountPost)))
+	a.mux.Handle("POST /almacenamiento/{id}/indexar", a.requireAuth(http.HandlerFunc(a.storageIndexPost)))
+	a.mux.Handle("POST /almacenamiento/{id}/subir", a.requireAuth(http.HandlerFunc(a.storageUploadPost)))
+	a.mux.HandleFunc("GET /salud", a.healthGet)
+	a.mux.Handle("/webdav", a.webdavAuth(a.webdav))
+	a.mux.Handle("/webdav/", a.webdavAuth(a.webdav))
 }
 
 func (a *App) housekeeping() {
+	a.backupMetadataIfNeeded()
 	ticker := time.NewTicker(30 * time.Minute)
 	defer ticker.Stop()
 	for {
@@ -133,6 +206,7 @@ func (a *App) housekeeping() {
 			return
 		case <-ticker.C:
 			a.limiter.Cleanup()
+			a.backupMetadataIfNeeded()
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			if err := a.store.DeleteExpiredSessions(ctx); err != nil {
 				a.logger.Warn("no se pudieron limpiar sesiones vencidas", "error", err)
@@ -143,6 +217,32 @@ func (a *App) housekeeping() {
 			cancel()
 		}
 	}
+}
+
+func (a *App) backupMetadataIfNeeded() {
+	now := time.Now().UTC()
+	day := now.Format("20060102")
+	if a.lastBackupDay == day {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	exists, err := a.store.AdminExists(ctx)
+	if err != nil || !exists {
+		return
+	}
+	snapshot, err := a.catalog.SnapshotBytes(ctx)
+	if err != nil {
+		a.logger.Warn("no se pudo preparar snapshot del catálogo", "error", err)
+		return
+	}
+	path, err := backup.CreateMetadata(a.cfg.DataDir, a.cfg.StorePath(), snapshot, now)
+	if err != nil {
+		a.logger.Warn("no se pudo crear backup de metadatos", "error", err)
+		return
+	}
+	a.lastBackupDay = day
+	a.logger.Info("backup de metadatos creado", "path", path)
 }
 
 func (a *App) render(w http.ResponseWriter, status int, page string, data pageData) {

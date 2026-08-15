@@ -1,0 +1,38 @@
+[Unit]
+Description=Personal Cloud
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=personalcloud
+Group=personalcloud
+SupplementaryGroups=disk
+WorkingDirectory=/var/lib/personalcloud
+ExecStart=/usr/local/bin/personalcloud
+EnvironmentFile=-/etc/personalcloud/personalcloud.env
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=20s
+UMask=0077
+
+# El proceso necesita montar/desmontar block devices registrados. CAP_SYS_ADMIN
+# es amplia; se limita al servicio y se compensa con el resto del sandbox.
+AmbientCapabilities=CAP_SYS_ADMIN
+CapabilityBoundingSet=CAP_SYS_ADMIN
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+ReadWritePaths=/var/lib/personalcloud /mnt/personalcloud
+
+[Install]
+WantedBy=multi-user.target

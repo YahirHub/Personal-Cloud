@@ -41,16 +41,23 @@ func main() {
 		Addr:              cfg.Addr,
 		Handler:           application.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      60 * time.Second,
-		IdleTimeout:       90 * time.Second,
+		// Los cuerpos pueden ser archivos grandes; ReadHeaderTimeout protege la fase previa
+		// sin imponer un límite global que corte transferencias legítimas.
+		IdleTimeout: 2 * time.Minute,
 	}
 
 	errCh := make(chan error, 1)
 	go func() {
-		logger.Info("servidor iniciado", "addr", cfg.Addr)
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errCh <- err
+		tlsEnabled := cfg.TLSCertFile != ""
+		logger.Info("servidor iniciado", "addr", cfg.Addr, "tls", tlsEnabled)
+		var serveErr error
+		if tlsEnabled {
+			serveErr = server.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile)
+		} else {
+			serveErr = server.ListenAndServe()
+		}
+		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			errCh <- serveErr
 		}
 	}()
 

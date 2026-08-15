@@ -11,15 +11,31 @@ type renderUser struct {
 	Role     string
 }
 
+type renderStats struct {
+	Volumes int
+	Online  int
+	Files   int
+	Photos  int
+	Bytes   int64
+}
+
 type renderData struct {
-	Title       string
-	Description string
-	CurrentPath string
-	CSRFToken   string
-	Error       string
-	Info        string
-	RetryAfter  int
-	User        *renderUser
+	Title          string
+	Description    string
+	CurrentPath    string
+	CSRFToken      string
+	Error          string
+	Info           string
+	RetryAfter     int
+	User           *renderUser
+	Stats          renderStats
+	StorageItems   []any
+	StorageError   string
+	Photos         []any
+	PhotoOffset    int
+	PhotoNext      int
+	PhotoHasMore   bool
+	MaxUploadBytes int64
 }
 
 func TestRenderPages(t *testing.T) {

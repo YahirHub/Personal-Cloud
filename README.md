@@ -1,38 +1,90 @@
 # Personal Cloud
 
-Servidor de almacenamiento personal escrito en Go. Esta primera etapa implementa el núcleo de configuración, autenticación y onboarding sobre el que se conectarán el gestor de unidades, el almacenamiento virtual, el catálogo de miniaturas y WebDAV.
+Servidor de almacenamiento personal mononodo escrito en Go para presentar varias unidades físicas como una nube lógica, mantener el catálogo visible aun cuando los discos de originales estén desmontados y exponer el mismo namespace por Web y WebDAV.
+
+La implementación actual está orientada a un MiniPC con almacenamiento interno para metadatos/caché y HDD/SSD/USB externos para originales.
 
 ## Estado actual
 
 Implementado:
 
-- Primer arranque protegido mediante `/setup`.
-- Código de configuración aleatorio generado en el log mientras no exista administrador.
-- Creación exclusiva de la primera cuenta administradora.
-- Contraseñas almacenadas con PBKDF2-HMAC-SHA256, salt aleatorio y formato versionado.
-- Sesiones persistentes con token aleatorio; solo se almacena su hash SHA-256.
-- Protección CSRF en formularios mutables.
-- Rate limit reutilizable para formularios sensibles.
-- Límite doble de login por IP y por usuario.
-- Manejo seguro de `X-Forwarded-For` únicamente desde proxies configurados como confiables.
-- Onboarding inicial en `/bienvenida`.
-- Rutas amigables en español.
-- Layout y componentes HTML reutilizables.
-- Recursos web embebidos en el binario.
-- Estado de usuarios y sesiones persistido con archivos JSON privados y reemplazo seguro con backup.
-- Auditoría append-only en JSON Lines con retención automática de 90 días y tope de 50,000 registros.
-- Cabeceras de seguridad y CSP sin dependencias frontend externas.
-- Vistas base `/inicio`, `/almacenamiento` y `/fotos` preparadas para los siguientes módulos.
+- Bootstrap seguro en `/setup` mediante código temporal mostrado únicamente en el log.
+- Primera cuenta administradora, login/logout, onboarding y sesiones persistentes.
+- PBKDF2-HMAC-SHA256 con salt aleatorio para contraseñas.
+- CSRF y rate limit reutilizable.
+- Rate limit de login por IP y usuario.
+- URLs amigables y frontend con layout/componentes reutilizables.
+- Detección de volúmenes Windows y Linux con identidad persistente.
+- Registro de unidades con nombre, categoría, raíz virtual, solo lectura y timeout de inactividad.
+- VFS que unifica todas las unidades registradas sin exponer rutas físicas.
+- Montaje bajo demanda y leases para impedir desmontajes durante operaciones activas.
+- Auto-desmontaje por inactividad.
+- Catálogo persistente separado del estado de autenticación.
+- Indexación de archivos con una sola cola para minimizar actividad simultánea sobre HDD.
+- Miniaturas de hasta 320 px y previews de hasta 1600 px para JPEG/PNG/GIF.
+- Galería `/fotos` que usa la caché interna aunque el disco original esté desmontado.
+- Apertura del original mediante montaje bajo demanda.
+- Upload web directo a una unidad registrada.
+- Políticas por tipo de unidad: documentos, fotos, multimedia o mixto.
+- Servidor WebDAV en `/webdav/` con las mismas credenciales.
+- TLS directo opcional o despliegue detrás de proxy HTTPS.
+- Healthcheck `/salud`.
+- Backups diarios de metadatos con retención de siete copias.
+- Build Linux y Windows/amd64 sin CGO y sin módulos Go externos.
 
-Pendiente por fases: detección/montaje de unidades, VFS, indexación, thumbnails/previews, WebDAV y hardening de despliegue.
+Pendientes deliberados:
 
-## Dependencias
+- thumbnails para HEIC/HEIF/AVIF/WebP/RAW y portadas de video;
+- explorador web general + routing automático de uploads;
+- evaluación posterior de SMB.
 
-El núcleo actual usa **únicamente la biblioteca estándar de Go**.
+Consulta `tareas/` y `contexto/` para el estado técnico completo.
 
-`go.mod` no requiere módulos externos. `go mod tidy` funciona directamente con una instalación normal de Go.
+## Arquitectura
 
-El proyecto declara Go 1.23 como versión mínima de lenguaje. Para builds de producción usa una versión de Go actualmente soportada y con los últimos parches de seguridad de su rama.
+```text
+                 navegador / WebDAV
+                        |
+                  HTTP / HTTPS
+                        |
+                 Personal Cloud
+                        |
+              +---------+---------+
+              |                   |
+             VFS               catálogo
+              |             metadata/cache
+       Storage Manager             |
+              |              SSD interno
+       +------+-------+
+       |              |
+   documentos     multimedia
+     HDD/SSD          HDD
+```
+
+El catálogo y las miniaturas permanecen en `APP_DATA_DIR`. Los originales permanecen en sus unidades físicas.
+
+Una lectura de original sigue este flujo:
+
+```text
+archivo virtual
+ -> localizar storage_id
+ -> obtener lease
+ -> montar unidad si hace falta
+ -> stream
+ -> liberar lease
+ -> esperar idle timeout
+ -> desmontar
+```
+
+Ver una miniatura o preview no requiere montar el disco original.
+
+## Requisitos
+
+- Go 1.23 o superior para desarrollar/compilar.
+- Linux o Windows amd64 para los builds principales actuales.
+- Permisos del SO para montar/desmontar si se quiere auto-mount.
+
+No hay dependencias Go externas. `go mod tidy` no necesita resolver módulos adicionales.
 
 ## Preparar y probar
 
@@ -42,7 +94,7 @@ go test ./...
 go vet ./...
 ```
 
-En Windows CMD también puedes usar:
+Windows CMD:
 
 ```bat
 scripts\deps.cmd
@@ -55,21 +107,15 @@ scripts\test.cmd
 go run ./cmd/server
 ```
 
-En Windows CMD:
+Windows CMD:
 
 ```bat
 scripts\run.cmd
 ```
 
-Por defecto escucha en `:8080` y crea:
+Por defecto escucha en `:8080`.
 
-```text
-data/state.json
-data/state.json.bak
-data/audit.jsonl
-```
-
-En el primer arranque aparecerá en consola un mensaje similar a:
+Primer arranque:
 
 ```text
 CONFIGURACIÓN INICIAL REQUERIDA url=/setup codigo=ABCD-EFGH-JKLM
@@ -81,94 +127,363 @@ Abre:
 http://127.0.0.1:8080/setup
 ```
 
-Introduce el código actual, usuario y una contraseña de al menos 12 caracteres. Tras crear el administrador el código se elimina de memoria y `/setup` deja de permitir el alta inicial.
+Después de crear el primer administrador, `/setup` queda deshabilitado y se inicia el onboarding.
+
+## Almacenamiento
+
+Abre:
+
+```text
+/almacenamiento
+```
+
+La pantalla separa unidades registradas de volúmenes detectados.
+
+### Identidad de volúmenes
+
+Linux usa UUID de `/dev/disk/by-uuid` y Windows usa Volume GUID. No se guarda `/dev/sdb` o `E:` como identidad principal porque esos nombres pueden cambiar.
+
+El servidor tampoco asume que todo USB será reportado como `removable`: HDD/SSD USB pueden presentarse como unidades fijas. Por eso se enumeran volúmenes locales aptos, se excluyen los recursos del sistema y el administrador decide cuáles registrar.
+
+### Categorías
+
+- `Documentos`: documentos, archivos comprimidos y otros archivos generales.
+- `Fotos`: imágenes.
+- `Multimedia`: imágenes, video y audio.
+- `Mixto`: cualquier tipo.
+
+Las políticas también se aplican a PUT WebDAV y uploads web.
+
+### Montaje bajo demanda
+
+Cada operación mantiene un lease. Mientras exista al menos un lease, la unidad no se desmonta.
+
+El timeout se configura por unidad entre 30 segundos y 7 días. El worker de inactividad solo revisa estado en memoria; no recorre el contenido del disco continuamente.
+
+En el cierre limpio del servidor se intenta desmontar las unidades configuradas con auto-desmontaje cuando ya no tienen operaciones activas.
+
+### Windows
+
+La detección usa APIs Win32. Para desmontar, Personal Cloud intenta:
+
+```text
+flush
+ -> lock volume
+ -> dismount volume
+ -> retirar punto de montaje
+```
+
+Si el volumen está ocupado y no puede bloquearse, la operación falla en lugar de forzar el desmontaje.
+
+Las operaciones de montaje/desmontaje normalmente requieren ejecutar el proceso con privilegios elevados.
+
+### Linux
+
+Se leen los montajes desde `/proc/self/mountinfo`. Los mountpoints críticos (`/`, `/boot`, `/boot/efi`, `/usr`, `/var`) y el dispositivo base del root filesystem no pueden registrarse desde la UI.
+
+Montar filesystems requiere privilegios. El ejemplo systemd concede `CAP_SYS_ADMIN` al usuario dedicado y acceso al grupo `disk`; revisa esa política para tu distribución.
+
+## Catálogo y fotos
+
+Los metadatos viven en:
+
+```text
+data/catalog/snapshot.json
+data/catalog/events.jsonl
+```
+
+La caché vive en:
+
+```text
+data/cache/thumbnails/
+data/cache/previews/
+```
+
+El catálogo usa un snapshot compacto más un journal append-only. Los eventos se compactan periódicamente y el catálogo activo permanece en memoria para navegación rápida.
+
+Se dejó una deuda técnica explícita: si el catálogo supera aproximadamente 500,000 archivos o el consumo de memoria/tiempo de arranque deja de ser razonable, el paquete `catalog` debe migrarse a un índice disk-backed sin cambiar el VFS.
+
+### Indexación
+
+Desde `/almacenamiento`, pulsa **Indexar** sobre una unidad registrada.
+
+El indexador:
+
+1. obtiene un lease y monta la unidad si hace falta;
+2. recorre archivos regulares;
+3. ignora symlinks y carpetas de sistema conocidas;
+4. actualiza metadata en lotes;
+5. genera thumbnails/previews soportados;
+6. elimina entradas de archivos que ya no existen;
+7. libera el lease;
+8. permite que el idle timeout desmonte la unidad.
+
+Solo existe un worker de indexación para no despertar o cargar varios HDD al mismo tiempo.
+
+### Formatos actuales de preview
+
+JPEG, PNG y GIF generan miniatura/preview usando únicamente la biblioteca estándar. Para proteger el MiniPC frente a imágenes que disparen el uso de RAM, una fuente de más de 80 megapíxeles se cataloga pero no se decodifica para thumbnail en esta etapa.
+
+HEIC, HEIF, AVIF, WebP y formatos RAW se reconocen como imágenes dentro del catálogo, pero pueden aparecer sin thumbnail hasta implementar la tarea 07. Los videos todavía no generan portada.
+
+## WebDAV
+
+Endpoint:
+
+```text
+https://tu-dominio/webdav/
+```
+
+Usa el mismo usuario y contraseña de Personal Cloud.
+
+Implementado:
+
+- OPTIONS;
+- PROPFIND Depth 0/1;
+- GET / HEAD;
+- PUT;
+- DELETE;
+- MKCOL;
+- MOVE dentro de la misma unidad;
+- COPY de archivos;
+- LOCK / UNLOCK.
+
+Fuera de loopback WebDAV requiere HTTPS por defecto porque Basic Auth transporta credenciales en cada conexión HTTP.
+
+Para evitar ejecutar PBKDF2 en cada petición válida, el servidor conserva durante cinco minutos una prueba HMAC de la credencial en memoria. No almacena la contraseña y la entrada queda invalidada si cambia el hash persistido del usuario.
+
+Rate limit WebDAV:
+
+- 30 intentos costosos por IP / 15 min;
+- 12 por combinación IP + usuario / 15 min;
+- las autenticaciones ya validadas en caché no consumen esos intentos.
+
+Las mutaciones WebDAV encolan reconciliación del catálogo. Si una unidad cambia mientras ya se está indexando, se programa una segunda pasada para no perder el cambio.
+
+`COPY` recursivo de directorios no está implementado todavía. Se mantuvo como deuda visible hasta verificar que un cliente real lo requiera.
 
 ## Configuración
 
-Las variables de configuración de la aplicación están documentadas en `.env.example`.
+La aplicación usa variables `APP_*` para configuración de despliegue. No son necesarias para desarrollo local.
 
 | Variable | Predeterminado | Uso |
 | --- | --- | --- |
-| `APP_ADDR` | `:8080` | Dirección HTTP de escucha |
-| `APP_DATA_DIR` | `./data` | Directorio privado para estado, auditoría y futuros metadatos |
-| `APP_COOKIE_SECURE` | `false` | Debe ser `true` detrás de HTTPS en producción |
-| `APP_TRUSTED_PROXIES` | loopback | CIDRs autorizados para aportar `X-Forwarded-For` |
-| `APP_SESSION_TTL` | `168h` | Duración de sesión |
+| `APP_ADDR` | `:8080` | Dirección de escucha |
+| `APP_DATA_DIR` | `./data` | Estado, catálogo, caché y backups |
+| `APP_MOUNT_ROOT` | `/mnt/personalcloud` en Linux | Mountpoints administrados; se ignora en Windows |
+| `APP_MAX_UPLOAD_BYTES` | `21474836480` | Máximo por upload, 20 GiB |
+| `APP_COOKIE_SECURE` | `false` | Cookie Secure; se fuerza si HTTPS es obligatorio/TLS directo |
+| `APP_REQUIRE_HTTPS` | `false` | Redirige HTTP a HTTPS y habilita HSTS |
+| `APP_WEBDAV_REQUIRE_HTTPS` | `true` | Rechaza WebDAV remoto sobre HTTP |
+| `APP_TLS_CERT_FILE` | vacío | Certificado PEM para TLS directo |
+| `APP_TLS_KEY_FILE` | vacío | Clave PEM para TLS directo |
+| `APP_TRUSTED_PROXIES` | loopback | CIDRs que pueden aportar forwarded headers |
+| `APP_SESSION_TTL` | `168h` | Duración de sesión web |
 
-La aplicación no carga `.env` automáticamente. La configuración puede inyectarse desde el sistema, servicio o contenedor.
+`APP_TLS_CERT_FILE` y `APP_TLS_KEY_FILE` deben configurarse juntos.
 
-## Proxy y HTTPS
+## HTTPS detrás de Caddy
 
-Para exponer el servidor fuera de la LAN:
+Ejemplo incluido:
 
-1. Termina TLS en un proxy confiable.
-2. Define `APP_COOKIE_SECURE=true` en el entorno del servicio.
-3. Añade exclusivamente las redes del proxy a `APP_TRUSTED_PROXIES`.
-4. No confíes globalmente en `X-Forwarded-For` desde Internet.
-5. Restringe el puerto interno del servidor a la LAN, loopback o red privada del proxy.
+```text
+deploy/caddy/Caddyfile.example
+```
 
-## Rate limit inicial
+Configura el servicio interno aproximadamente así:
 
-- `/setup`: 5 intentos por IP cada 10 minutos.
-- `/iniciar-sesion`: 12 intentos por IP cada 15 minutos.
-- Login adicional: 6 intentos por nombre de usuario cada 15 minutos.
+```text
+APP_ADDR=127.0.0.1:8080
+APP_REQUIRE_HTTPS=true
+APP_WEBDAV_REQUIRE_HTTPS=true
+APP_TRUSTED_PROXIES=127.0.0.1/32,::1/128
+```
 
-El limitador es un servicio interno reutilizable para formularios sensibles futuros.
+Caddy enviará la petición al backend y Personal Cloud solo confiará en forwarded headers procedentes del proxy configurado.
 
-## Persistencia
+## TLS directo
 
-`state.json` guarda únicamente el estado pequeño y crítico del núcleo: usuarios y sesiones. Cada mutación se escribe primero en un archivo temporal del mismo directorio, se sincroniza, conserva la versión anterior como `state.json.bak` y después sustituye el estado activo.
+También puedes hacer que el propio binario escuche TLS:
 
-La auditoría se escribe en `audit.jsonl` para no reescribir todo el estado por cada intento de login. La limpieza periódica aplica retención y límite de filas.
+```text
+APP_TLS_CERT_FILE=/ruta/fullchain.pem
+APP_TLS_KEY_FILE=/ruta/privkey.pem
+```
 
-El catálogo masivo de archivos/fotos **no** se almacenará en este JSON. La tarea de catálogo elegirá un índice apropiado cuando exista esa necesidad real; SQLite sigue siendo un candidato, pero no se añade prematuramente al bootstrap.
+Si TLS directo está configurado, las cookies pasan automáticamente a `Secure`.
 
-## Contraseñas
+## Backups de metadatos
 
-Las contraseñas usan PBKDF2-HMAC-SHA256 con:
+Una vez que existe administrador, el housekeeping crea como máximo un backup por día en:
 
-- salt aleatorio de 128 bits;
-- 600,000 iteraciones;
-- salida de 256 bits;
-- comparación en tiempo constante;
-- formato persistido que incluye algoritmo y factor de trabajo para permitir migraciones futuras;
-- límites al factor de trabajo leído para evitar hashes manipulados que provoquen consumo excesivo de CPU.
+```text
+data/backups/metadata-YYYYMMDD.zip
+```
 
-Nunca se registran contraseñas ni tokens de sesión.
+Retiene las siete copias más recientes.
+
+Incluye:
+
+- `state.json`;
+- un snapshot consistente del catálogo;
+- manifiesto del backup.
+
+No incluye:
+
+- originales;
+- thumbnails/previews, porque son regenerables;
+- auditoría completa.
+
+Este backup local protege principalmente ante corrupción/cambios del estado, **no** ante la pérdida física del SSD interno. Un backup secundario/off-site es una fase distinta.
+
+## Despliegue Linux con systemd
+
+Archivos:
+
+```text
+deploy/linux/personalcloud.service
+deploy/linux/personalcloud.env.example
+deploy/linux/install-systemd.sh
+```
+
+Compila primero:
+
+```bash
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o personalcloud ./cmd/server
+```
+
+En una distribución systemd con `useradd`, `usermod` y grupo `disk`:
+
+```bash
+sudo ./deploy/linux/install-systemd.sh ./personalcloud
+```
+
+Después revisa:
+
+```text
+/etc/personalcloud/personalcloud.env
+```
+
+Comandos útiles:
+
+```bash
+sudo systemctl status personalcloud
+sudo journalctl -u personalcloud -f
+sudo systemctl restart personalcloud
+```
+
+La capacidad `CAP_SYS_ADMIN` necesaria para montar es amplia. El servicio compensa con usuario dedicado y sandbox de systemd, pero una futura separación de helper privilegiado puede ser conveniente si el servidor aumenta su superficie de exposición.
+
+## Inicio automático en Windows
+
+Archivos:
+
+```text
+deploy/windows/install-startup-task.ps1
+deploy/windows/uninstall-startup-task.ps1
+```
+
+Compila:
+
+```bat
+go build -trimpath -ldflags="-s -w" -o personalcloud.exe ./cmd/server
+```
+
+Abre PowerShell como administrador:
+
+```powershell
+.\deploy\windows\install-startup-task.ps1 -ExePath .\personalcloud.exe
+```
+
+Se crea una tarea **Personal Cloud** al inicio, ejecutada con el usuario actual mediante S4U y nivel elevado. El directorio de trabajo predeterminado es:
+
+```text
+C:\ProgramData\PersonalCloud
+```
+
+Para retirar únicamente la tarea:
+
+```powershell
+.\deploy\windows\uninstall-startup-task.ps1
+```
+
+El desinstalador no borra datos.
 
 ## Compilar
 
 Linux estático:
 
 ```bash
+mkdir -p bin
 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/personalcloud ./cmd/server
 ```
 
-Windows desde Windows:
+Windows:
 
 ```bat
+if not exist bin mkdir bin
 go build -trimpath -ldflags="-s -w" -o bin\personalcloud.exe ./cmd/server
 ```
 
-Cross-build de Windows desde Linux:
+Cross-build Windows desde Linux:
 
 ```bash
 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o bin/personalcloud.exe ./cmd/server
 ```
 
-## Prueba manual mínima
+## Seguridad relevante
 
-1. Arranca con un `data/` vacío y comprueba que `/` redirige a `/setup`.
-2. Comprueba que un código incorrecto no crea el administrador.
-3. Crea el administrador con el código mostrado en consola.
-4. Comprueba que inicia sesión automáticamente y abre `/bienvenida`.
-5. Completa el onboarding y verifica la redirección a `/inicio`.
-6. Cierra sesión y confirma que `/inicio` vuelve a `/iniciar-sesion`.
-7. Intenta credenciales incorrectas repetidamente y comprueba HTTP 429 al alcanzar el límite.
-8. Reinicia el servidor y confirma que `/setup` ya no vuelve a habilitarse.
-9. Verifica que la sesión válida persiste tras reiniciar mientras no haya expirado.
-10. Comprueba que `data/state.json.bak` aparece después de las primeras mutaciones.
+- `/setup` solo funciona mientras no exista administrador.
+- El setup code vive únicamente en memoria.
+- Contraseñas y tokens nunca se escriben en logs.
+- Sesiones guardan solamente el hash SHA-256 del token.
+- CSRF protege formularios web mutables.
+- El VFS rechaza traversal y symlinks que escapen de una raíz registrada.
+- Los uploads tienen límite y se escriben a temporales antes de reemplazar el archivo final.
+- Un volumen `read_only` no admite operaciones mutables desde Web ni WebDAV.
+- `X-Forwarded-For`/`X-Forwarded-Proto` solo se aceptan desde CIDRs confiables.
+- WebDAV remoto requiere HTTPS por defecto.
+- La aplicación no fuerza un dismount Windows si no consigue un lock exclusivo.
 
-## Seguridad del setup
+## Prueba manual recomendada de R5
 
-El código de setup aparece en el log por diseño, pero solo mientras no existe ningún administrador. Vive únicamente en memoria, cambia tras cada nuevo arranque previo al bootstrap y queda invalidado al crear el administrador.
+### Núcleo
+
+1. Conserva tu `data/` actual de R4 y arranca R5.
+2. Confirma que tu cuenta y onboarding siguen presentes.
+3. Comprueba `/inicio`, `/almacenamiento`, `/fotos` y `/salud`.
+
+### Unidad física
+
+1. Conecta un USB/HDD/SSD que **no** sea del sistema.
+2. Abre `/almacenamiento` y verifica que aparezca como detectado.
+3. Regístralo, por ejemplo como `Fotos`, raíz `Fotos` y timeout 60 segundos.
+4. Pulsa `Indexar`.
+5. Comprueba que aparecen las imágenes en `/fotos`.
+6. Espera el timeout y verifica que la unidad pase a desmontada.
+7. Recarga `/fotos`: las miniaturas deben seguir cargando desde el almacenamiento interno.
+8. Abre un original: la unidad debe montarse bajo demanda.
+9. Cierra la transferencia y comprueba que vuelve a desmontarse después del timeout.
+
+### Upload
+
+1. En `/almacenamiento`, selecciona la unidad registrada.
+2. Sube un archivo compatible con su categoría.
+3. Verifica que un tipo incompatible sea rechazado.
+4. Reindexa o espera la reindexación encolada tras una subida correcta.
+
+### WebDAV
+
+Conecta un cliente a:
+
+```text
+http://127.0.0.1:8080/webdav/
+```
+
+para una prueba local. Para cualquier acceso remoto usa HTTPS.
+
+Comprueba crear carpeta, subir archivo, leerlo, renombrarlo y borrarlo.
+
+## Contexto y tareas
+
+Las decisiones persistentes están en `contexto/` y el estado del roadmap en `tareas/`. Solo se marca una tarea como completada cuando su código y validación mínima existen; las limitaciones detectadas se convierten en tareas futuras en lugar de ocultarse.
