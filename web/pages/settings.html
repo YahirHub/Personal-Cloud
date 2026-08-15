@@ -1,0 +1,14 @@
+{{define "content"}}
+<section class="page">
+  <header class="page-header"><div><div class="eyebrow">Servidor</div><h1>Configuración</h1><p class="muted">Controla la reconciliación del catálogo con los cambios reales de tus unidades.</p></div></header>
+  {{if .Info}}<div class="alert alert-success">{{.Info}}</div>{{end}}{{if .Error}}<div class="alert alert-error">{{.Error}}</div>{{end}}
+  <div class="settings-grid">
+    <article class="panel-card"><div class="eyebrow">Sincronización</div><h2>Escaneo del catálogo</h2><p class="muted">Una sincronización detecta archivos agregados, eliminados o modificados fuera del panel. La sincronización periódica puede despertar discos externos, por eso está desactivada por defecto.</p>
+      <form class="form-grid" method="post" action="/configuracion/sincronizacion"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><label>Intervalo en minutos<input type="number" name="sync_interval_minutes" value="{{.Settings.SyncIntervalMinutes}}" min="0" max="10080" step="5"><small>0 = desactivado · mínimo 5 min · máximo 7 días</small></label><button class="button button-primary" type="submit">Guardar intervalo</button></form>
+      <div class="settings-status"><strong>{{.SettingsSyncText}}</strong><small>Última sincronización solicitada: {{formatTime .Settings.LastSyncAt}}</small></div>
+      <form method="post" action="/configuracion/sincronizar"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><button class="button button-secondary" type="submit">{{template "icon-sync" .}} Sincronizar ahora</button></form>
+    </article>
+    <article class="panel-card"><div class="eyebrow">Cómo funciona</div><h2>Reconciliación segura</h2><ul class="feature-list"><li>Archivos nuevos → se agregan al catálogo.</li><li>Archivos modificados → se actualizan y regeneran caches.</li><li>Archivos eliminados externamente → se retiran del catálogo.</li><li>Medios dañados → se marcan y se ofrece eliminarlos.</li></ul></article>
+  </div>
+</section>
+{{end}}

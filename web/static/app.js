@@ -46,9 +46,15 @@
             else if (job.state === 'error') label.textContent = `Error: ${job.error}`;
           }
           if (detail) {
-            if (job.state === 'scanning') detail.textContent = `${job.images || 0} imágenes · ${job.videos || 0} videos · ${job.audio || 0} audios`;
-            else if (job.state === 'done') detail.textContent = 'Última indexación terminada';
+            if (job.state === 'scanning') detail.textContent = `${job.images || 0} imágenes · ${job.videos || 0} videos · ${job.audio || 0} audios${job.damaged ? ` · ${job.damaged} dañados` : ''}`;
+            else if (job.state === 'done') detail.textContent = `Última indexación terminada${job.damaged ? ` · ${job.damaged} dañados detectados` : ''}`;
             else detail.textContent = '';
+          }
+          const damagedPanel = $('[data-damaged-panel]', card);
+          const damagedCount = $('[data-damaged-count]', card);
+          if (job.state === 'done' && damagedPanel) {
+            damagedPanel.hidden = !(job.damaged > 0);
+            if (damagedCount) damagedCount.textContent = String(job.damaged || 0);
           }
         });
       } catch (_) {}
@@ -67,6 +73,12 @@
   $('[data-open-gallery-filter]')?.addEventListener('click', () => filterDialog?.showModal());
   $('[data-close-gallery-filter]')?.addEventListener('click', () => filterDialog?.close());
   filterDialog?.addEventListener('click', (event) => { if (event.target === filterDialog) filterDialog.close(); });
+  $$('[data-icon-select]').forEach((select) => {
+    const leading = select.closest('.select-with-icon')?.querySelector('.select-leading');
+    const refresh = () => { if (leading) leading.textContent = select.selectedOptions[0]?.dataset.icon || '•'; };
+    select.addEventListener('change', refresh);
+    refresh();
+  });
 
   // Descargas seguras mediante ticket opaco de vida corta.
   const csrfToken = $('meta[name="csrf-token"]')?.content || '';
@@ -140,9 +152,10 @@
   const makeMediaCard = (item) => {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'photo-card media-card';
+    button.className = `photo-card media-card${item.health === 'damaged' ? ' is-damaged' : ''}`;
     Object.assign(button.dataset, {
       mediaId: item.id,
+      selectableFile: item.id,
       downloadFileId: item.id,
       storageId: item.storage_id,
       kind: item.kind,
@@ -165,10 +178,15 @@
       placeholder.textContent = item.kind === 'video' ? '▶' : item.kind === 'audio' ? '♪' : '▧';
       button.append(placeholder);
     }
-    if (item.kind === 'video' || item.kind === 'audio') {
+    const check = document.createElement('span');
+    check.className = 'selection-check';
+    check.setAttribute('aria-hidden', 'true');
+    check.textContent = '✓';
+    button.append(check);
+    if (item.health === 'damaged' || item.kind === 'video' || item.kind === 'audio') {
       const badge = document.createElement('span');
-      badge.className = 'media-badge';
-      badge.textContent = item.kind === 'video' ? 'Video' : 'Audio';
+      badge.className = `media-badge${item.health === 'damaged' ? ' media-badge-danger' : ''}`;
+      badge.textContent = item.health === 'damaged' ? 'Dañado' : item.kind === 'video' ? 'Video' : 'Audio';
       button.append(badge);
     }
     const meta = document.createElement('div');
@@ -430,7 +448,13 @@
   };
   grid?.addEventListener('click', (event) => {
     const card = event.target.closest('[data-media-id]');
-    if (card) showMedia(mediaCards().indexOf(card));
+    if (!card) return;
+    if (document.body.classList.contains('selection-mode')) {
+      event.preventDefault();
+      toggleSelected(card);
+      return;
+    }
+    showMedia(mediaCards().indexOf(card));
   });
   const stepMedia = async (delta) => {
     const before = mediaCards().length;
@@ -522,12 +546,20 @@
   let loadingFiles = false;
   const makeFileRow = (item) => {
     const anchor = document.createElement('a');
-    anchor.className = `file-row${item.offline ? ' is-offline' : ''}`;
+    anchor.className = `file-row${item.offline ? ' is-offline' : ''}${item.health === 'damaged' ? ' is-damaged' : ''}`;
     anchor.setAttribute('role', 'listitem');
     anchor.href = item.is_dir ? item.url : item.download_url;
     if (!item.is_dir && item.id) {
       anchor.dataset.downloadFileId = item.id;
+      anchor.dataset.selectableFile = item.id;
       anchor.dataset.offline = String(Boolean(item.offline));
+    }
+    if (!item.is_dir && item.id) {
+      const check = document.createElement('span');
+      check.className = 'selection-check file-selection-check';
+      check.setAttribute('aria-hidden', 'true');
+      check.textContent = '✓';
+      anchor.append(check);
     }
     const kind = document.createElement('span');
     kind.className = `file-kind${item.is_dir ? ' folder' : ''}`;
@@ -564,4 +596,130 @@
       if (entries.some((entry) => entry.isIntersecting)) loadMoreFiles();
     }, { rootMargin: '500px' }).observe(fileSentinel);
   }
+
+  // Selección múltiple reutilizable en Galería y Archivos.
+  const selectedIDs = new Set();
+  const bulkToolbar = $('[data-bulk-toolbar]');
+  const selectionCount = $('[data-selection-count]');
+  const moveDialog = $('[data-move-dialog]');
+  const moveForm = $('[data-move-form]', moveDialog);
+  let actionIDs = [];
+  let longPressFired = false;
+
+  const refreshSelectionUI = () => {
+    $$('[data-selectable-file]').forEach((element) => element.classList.toggle('is-selected', selectedIDs.has(element.dataset.selectableFile)));
+    if (selectionCount) selectionCount.textContent = String(selectedIDs.size);
+    if (bulkToolbar) bulkToolbar.hidden = selectedIDs.size === 0;
+  };
+  const setSelectionMode = (enabled) => {
+    document.body.classList.toggle('selection-mode', enabled);
+    if (!enabled) selectedIDs.clear();
+    refreshSelectionUI();
+  };
+  const toggleSelected = (element) => {
+    const id = element?.dataset.selectableFile;
+    if (!id || element.dataset.offline === 'true') return;
+    if (selectedIDs.has(id)) selectedIDs.delete(id); else selectedIDs.add(id);
+    refreshSelectionUI();
+  };
+  $$('[data-toggle-selection]').forEach((button) => button.addEventListener('click', () => setSelectionMode(!document.body.classList.contains('selection-mode'))));
+  $$('[data-confirm-damaged]').forEach((form) => form.addEventListener('submit', (event) => {
+    if (!window.confirm('¿Eliminar permanentemente los elementos dañados de esta unidad? Esta acción no se puede deshacer.')) event.preventDefault();
+  }));
+  $('[data-selection-cancel]')?.addEventListener('click', () => setSelectionMode(false));
+  document.addEventListener('click', (event) => {
+    const row = event.target.closest('.file-row[data-selectable-file]');
+    if (!row || !document.body.classList.contains('selection-mode')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    toggleSelected(row);
+  });
+
+  const selectedParams = (ids, extra = {}) => {
+    const params = new URLSearchParams({ csrf_token: csrfToken, ...extra });
+    ids.forEach((id) => params.append('file_id', id));
+    return params;
+  };
+  const postAction = async (url, ids, extra = {}) => {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', Accept: 'application/json' },
+      body: selectedParams(ids, extra), cache: 'no-store'
+    });
+    const contentType = response.headers.get('content-type') || '';
+    const data = contentType.includes('application/json') ? await response.json() : { error: (await response.text()).trim() };
+    if (!response.ok) {
+      const error = new Error(data.error || 'La operación no pudo completarse.');
+      error.data = data;
+      throw error;
+    }
+    return data;
+  };
+  const startBatchDownload = async (ids) => {
+    const data = await postAction('/api/elementos/descargar', ids);
+    if (!data.url) throw new Error('El servidor no devolvió la descarga.');
+    const anchor = document.createElement('a');
+    anchor.href = data.url; anchor.hidden = true; document.body.append(anchor); anchor.click(); anchor.remove();
+  };
+  $('[data-bulk-download]')?.addEventListener('click', async () => {
+    try { await startBatchDownload([...selectedIDs]); } catch (error) { window.alert(error.message); }
+  });
+  const openMoveDialog = (ids) => {
+    actionIDs = [...ids];
+    if (!actionIDs.length) return;
+    hideDownloadMenu();
+    if (viewer?.open) viewer.close();
+    moveDialog?.showModal();
+  };
+  $('[data-bulk-move]')?.addEventListener('click', () => openMoveDialog(selectedIDs));
+  $$('[data-close-move]').forEach((button) => button.addEventListener('click', () => moveDialog?.close()));
+  moveDialog?.addEventListener('click', (event) => { if (event.target === moveDialog) moveDialog.close(); });
+  moveForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const formData = new FormData(moveForm);
+    try {
+      await postAction('/api/elementos/mover', actionIDs, { destination_root: formData.get('destination_root') || '', target_dir: formData.get('target_dir') || '' });
+      window.location.reload();
+    } catch (error) {
+      window.alert(error.data?.partial ? `${error.message}\n\n${error.data.completed || 0} elemento(s) sí se movieron antes del fallo. La vista se actualizará.` : error.message);
+      if (error.data?.partial) window.location.reload();
+    }
+  });
+  const deleteIDs = async (ids) => {
+    if (!ids.length || !window.confirm(`¿Eliminar permanentemente ${ids.length} elemento(s)? Esta acción no se puede deshacer.`)) return;
+    await postAction('/api/elementos/eliminar', ids);
+    window.location.reload();
+  };
+  $('[data-bulk-delete]')?.addEventListener('click', async () => {
+    try { await deleteIDs([...selectedIDs]); } catch (error) { window.alert(error.message); }
+  });
+  $('[data-context-move]', downloadMenu)?.addEventListener('click', () => { const id = downloadTargetID; if (id) openMoveDialog([id]); });
+  $('[data-context-delete]', downloadMenu)?.addEventListener('click', async () => {
+    const id = downloadTargetID; hideDownloadMenu();
+    try { if (id) await deleteIDs([id]); } catch (error) { window.alert(error.message); }
+  });
+
+  // Pulsación larga táctil = mismo menú de acciones que clic derecho.
+  let pressTimer = 0, pressStartX = 0, pressStartY = 0;
+  document.addEventListener('pointerdown', (event) => {
+    if (event.pointerType !== 'touch') return;
+    const target = event.target.closest('[data-download-file-id]');
+    if (!target || target.dataset.offline === 'true') return;
+    pressStartX = event.clientX; pressStartY = event.clientY;
+    window.clearTimeout(pressTimer);
+    pressTimer = window.setTimeout(() => {
+      longPressFired = true;
+      if (navigator.vibrate) navigator.vibrate(20);
+      showDownloadMenu(pressStartX, pressStartY, target.dataset.downloadFileId);
+    }, 550);
+  }, { passive: true });
+  document.addEventListener('pointermove', (event) => {
+    if (Math.abs(event.clientX - pressStartX) > 10 || Math.abs(event.clientY - pressStartY) > 10) window.clearTimeout(pressTimer);
+  }, { passive: true });
+  ['pointerup', 'pointercancel'].forEach((type) => document.addEventListener(type, () => window.clearTimeout(pressTimer), { passive: true }));
+  document.addEventListener('click', (event) => {
+    if (!longPressFired) return;
+    longPressFired = false;
+    if (event.target.closest('[data-download-file-id]')) { event.preventDefault(); event.stopPropagation(); }
+  }, true);
 })();

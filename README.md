@@ -223,11 +223,15 @@ El indexador:
 3. ignora symlinks y carpetas de sistema conocidas;
 4. actualiza metadata en lotes;
 5. genera thumbnails/previews soportados;
-6. elimina entradas de archivos que ya no existen;
-7. libera el lease;
-8. permite que el idle timeout desmonte la unidad.
+6. verifica de forma conservadora la integridad de imágenes/video/audio;
+7. elimina del catálogo entradas de archivos que ya no existen físicamente;
+8. incorpora archivos nuevos o modificados fuera del panel;
+9. libera el lease;
+10. permite que el idle timeout desmonte la unidad.
 
-Solo existe un worker de indexación para no despertar o cargar varios HDD al mismo tiempo.
+Solo existe un worker de indexación para no despertar o cargar varios HDD al mismo tiempo. Las imágenes que el decoder nativo puede manejar se decodifican para comprobar que no estén truncadas; video/audio usan `ffprobe` si está disponible. Si no existe una forma segura de comprobar un formato, se marca internamente como `unchecked` y **no** se presenta como dañado. La comprobación es de integridad operativa rápida, no un análisis forense de bit-rot de cada frame.
+
+Cuando una indexación termina con medios ilegibles, `/almacenamiento` muestra el total encontrado y ofrece **Omitir** o **Eliminar dañados**. Omitir conserva los originales y silencia ese aviso mientras el archivo no cambie; eliminar retira el archivo físico y su caché/catalogación.
 
 ## Explorador y subida automática
 
@@ -251,6 +255,16 @@ Cuando no se fuerza un destino, el routing usa:
 - entre unidades con la misma prioridad se prefiere la que reporta más espacio libre.
 
 Si navegas dentro de una raíz virtual, la subida se dirige explícitamente a esa unidad y sigue aplicando su política de tipos. Después de cada subida se encola la reindexación correspondiente.
+
+### Operaciones de archivos y selección múltiple
+
+Galería y Archivos comparten un modo de selección activado desde el botón de tres puntos. En ese modo aparecen casillas y cada tarjeta/fila seleccionada reduce ligeramente su escala y muestra un resaltado visual. Se pueden seleccionar hasta 500 archivos por operación y ejecutar:
+
+- **Descargar ZIP**: crea el ZIP directamente sobre la respuesta HTTP, un archivo a la vez, con un buffer de 64 KiB. Fotos, video, audio, PDF y archivos ya comprimidos usan `Store` para no gastar CPU inútilmente; texto y formatos compresibles usan Deflate `BestSpeed`. No crea un ZIP temporal gigante ni carga todos los archivos en RAM. Solo se permite un ZIP masivo simultáneo para proteger hardware modesto. Los archivos que desaparezcan o cuya unidad se desconecte durante el proceso se anotan dentro de `PERSONAL-CLOUD-ERRORES.txt` sin tumbar todo el servidor.
+- **Mover**: permite elegir otra unidad y una carpeta anidada; si la carpeta no existe se crea. En la misma unidad usa rename; entre unidades copia por streaming a un temporal, hace `Sync`, confirma el destino y solo después elimina el origen. El catálogo y las caches se actualizan directamente, sin reindexar toda la unidad.
+- **Eliminar**: pide confirmación, elimina los originales/caches y retira las entradas del catálogo.
+
+El mismo menú de Descargar/Mover/Eliminar aparece con clic derecho en escritorio y con pulsación larga en dispositivos táctiles/Android. Todas las mutaciones usan sesión autenticada, CSRF, límites de operación y validación del VFS; las descargas masivas remotas requieren HTTPS y usan un ticket aleatorio opaco, de un solo uso y ligado al usuario.
 
 ### Galería, visor y formatos multimedia
 
@@ -337,6 +351,8 @@ Las mutaciones WebDAV encolan reconciliación del catálogo. Si una unidad cambi
 `COPY` recursivo de directorios no está implementado todavía. Se mantuvo como deuda visible hasta verificar que un cliente real lo requiera.
 
 ## Configuración
+
+La pantalla `/configuracion` incluye reconciliación manual y periódica del catálogo. **Sincronizar ahora** encola únicamente las unidades registradas que estén físicamente disponibles. El intervalo periódico está desactivado por defecto y puede configurarse entre 5 minutos y 7 días; cada ejecución detecta altas, bajas, cambios e integridad sin depender de que todos los cambios hayan pasado por la UI. Conviene dejarlo desactivado o con un intervalo amplio cuando la prioridad sea mantener HDD dormidos.
 
 La aplicación usa variables `APP_*` para configuración de despliegue. No son necesarias para desarrollo local.
 
@@ -519,7 +535,7 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o b
 - WebDAV remoto requiere HTTPS por defecto.
 - La aplicación no fuerza un dismount Windows si no consigue un lock exclusivo.
 
-## Prueba manual recomendada de R7
+## Prueba manual recomendada
 
 ### Núcleo
 

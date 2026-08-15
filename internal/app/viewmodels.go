@@ -9,9 +9,10 @@ import (
 
 type storagePageItem struct {
 	storage.View
-	Job           catalog.JobStatus
-	JobPercent    int
-	SuggestedRoot string
+	Job            catalog.JobStatus
+	JobPercent     int
+	SuggestedRoot  string
+	DamagedPending int
 }
 
 type mediaPageItem struct {
@@ -32,6 +33,7 @@ type explorerItem struct {
 	IsDir       bool      `json:"is_dir"`
 	Offline     bool      `json:"offline"`
 	StorageName string    `json:"storage_name"`
+	Health      string    `json:"health,omitempty"`
 }
 
 type breadcrumbItem struct {

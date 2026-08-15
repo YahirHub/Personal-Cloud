@@ -323,6 +323,50 @@ func (f *FS) Remove(ctx context.Context, virtualPath string) error {
 	return os.RemoveAll(target)
 }
 
+// MoveFile mueve un archivo entre rutas virtuales. Dentro de la misma unidad usa rename
+// atómico; entre unidades copia por streaming a un temporal, sincroniza y elimina el origen
+// solo después de confirmar el destino. No carga el archivo completo en memoria.
+func (f *FS) MoveFile(ctx context.Context, from, to string, overwrite bool) (Entry, error) {
+	_, fromRel, fromCfg, err := f.resolve(ctx, from)
+	if err != nil {
+		return Entry{}, err
+	}
+	_, toRel, toCfg, err := f.resolve(ctx, to)
+	if err != nil {
+		return Entry{}, err
+	}
+	if fromRel == "" || toRel == "" {
+		return Entry{}, ErrInvalidPath
+	}
+	if !storage.CategoryAllowsFile(toCfg.Category, filepath.Base(toRel)) {
+		return Entry{}, ErrCategoryPolicy
+	}
+	if fromCfg.ID == toCfg.ID {
+		if err := f.Rename(ctx, from, to, overwrite); err != nil {
+			return Entry{}, err
+		}
+		return f.Stat(ctx, to)
+	}
+
+	source, entry, err := f.OpenRead(ctx, from)
+	if err != nil {
+		return Entry{}, err
+	}
+	defer source.Close()
+	if _, err := f.WriteAtomic(ctx, to, source.File, entry.Size, overwrite); err != nil {
+		return Entry{}, err
+	}
+	if err := source.Close(); err != nil {
+		_ = f.Remove(context.Background(), to)
+		return Entry{}, err
+	}
+	if err := f.Remove(ctx, from); err != nil {
+		_ = f.Remove(context.Background(), to)
+		return Entry{}, fmt.Errorf("destino creado pero no se pudo retirar origen; se revirtió el destino: %w", err)
+	}
+	return f.Stat(ctx, to)
+}
+
 func (f *FS) Rename(ctx context.Context, from, to string, overwrite bool) error {
 	_, fromRel, fromCfg, err := f.resolve(ctx, from)
 	if err != nil {

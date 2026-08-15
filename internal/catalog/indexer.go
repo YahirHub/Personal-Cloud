@@ -33,6 +33,7 @@ type JobStatus struct {
 	Images    int       `json:"images"`
 	Videos    int       `json:"videos"`
 	Audio     int       `json:"audio"`
+	Damaged   int       `json:"damaged"`
 	Updated   int       `json:"updated"`
 	Error     string    `json:"error,omitempty"`
 	StartedAt time.Time `json:"started_at,omitempty"`
@@ -219,6 +220,15 @@ func (i *Indexer) scan(storageID string) {
 		}
 		file := File{ID: id, StorageID: storageID, VirtualRoot: lease.Volume.VirtualRoot, RelativePath: filepath.ToSlash(rel), Name: info.Name(), Kind: kind, MIME: mimeType, Size: info.Size(), ModTime: info.ModTime().UTC()}
 		unchanged := existed && old.Size == info.Size() && old.ModTime.Equal(info.ModTime().UTC()) && old.Kind == kind
+		if unchanged && old.Health != "" {
+			file.Health, file.HealthError, file.HealthCheckedAt, file.DamageIgnored = old.Health, old.HealthError, old.HealthCheckedAt, old.DamageIgnored
+		} else if kind == "image" || kind == "video" || kind == "audio" {
+			file.Health, file.HealthError = i.verifyMediaQuick(ctx, source, kind, info.Size())
+			file.HealthCheckedAt = time.Now().UTC()
+		}
+		if file.Health == "damaged" && !file.DamageIgnored {
+			i.setJob(storageID, func(job *JobStatus) { job.Damaged++ })
+		}
 		switch kind {
 		case "image":
 			i.setJob(storageID, func(job *JobStatus) { job.Images++ })

@@ -60,6 +60,7 @@ func (a *App) storageGet(w http.ResponseWriter, r *http.Request) {
 		if view.Registered {
 			item.Job = a.indexer.Status(view.ID)
 			item.JobPercent = item.Job.Percent()
+			item.DamagedPending = len(a.catalog.DamagedByStorage(view.ID, false))
 		}
 		items = append(items, item)
 	}
@@ -121,6 +122,7 @@ func (a *App) galleryGet(w http.ResponseWriter, r *http.Request) {
 		ListingPagesURL:    galleryURL(kind, sortMode, "paginas", 1),
 		ListingPrevURL:     galleryURL(kind, sortMode, "paginas", maxInt(page-1, 1)),
 		ListingNextURL:     galleryURL(kind, sortMode, "paginas", page+1),
+		MoveDestinations:   a.moveDestinations(r.Context()),
 	})
 	a.render(w, http.StatusOK, "photos", data)
 }
@@ -395,6 +397,11 @@ func (a *App) originalFileGet(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, storagepkg.ErrOffline) {
 			http.Error(w, "La unidad que contiene este archivo no está conectada.", http.StatusServiceUnavailable)
+			return
+		}
+		if errors.Is(err, os.ErrNotExist) {
+			a.forgetMissingFile(r.Context(), file)
+			http.Error(w, "El archivo fue eliminado fuera de Personal Cloud y se retiró del catálogo.", http.StatusNotFound)
 			return
 		}
 		http.Error(w, "No se pudo abrir el archivo original.", http.StatusInternalServerError)

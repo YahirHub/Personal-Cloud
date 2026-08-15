@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 )
 
 type renderUser struct {
@@ -58,6 +59,15 @@ type renderData struct {
 	ExplorerHasMore    bool
 	ExplorerNext       int
 	MaxUploadBytes     int64
+	MoveDestinations   []struct {
+		ID, Name, VirtualRoot, Category string
+		Online, ReadOnly                bool
+	}
+	Settings struct {
+		SyncIntervalMinutes int
+		LastSyncAt          time.Time
+	}
+	SettingsSyncText string
 }
 
 func TestRenderPages(t *testing.T) {
@@ -65,7 +75,7 @@ func TestRenderPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pages := []string{"setup", "login", "onboarding", "dashboard", "storage", "files", "photos"}
+	pages := []string{"setup", "login", "onboarding", "dashboard", "storage", "files", "photos", "settings"}
 	for _, page := range pages {
 		t.Run(page, func(t *testing.T) {
 			data := renderData{Title: "Prueba", Description: "Prueba", CSRFToken: "token", ListingMode: "infinito", ListingBaseURL: "/galeria", ExplorerPath: "/"}

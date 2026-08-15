@@ -347,3 +347,29 @@ func TestFilesTemplateMarksOfflineStorageClearly(t *testing.T) {
 		t.Fatal("los elementos de una unidad desconectada deben conservar el estado visual offline")
 	}
 }
+
+func TestTemplatesExposeBulkSelectionAndSettings(t *testing.T) {
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := store.User{Username: "admin", Role: "admin"}
+	gallery := pageData{Title: "Galería", CurrentPath: "/galeria", User: &user, CSRFToken: "csrf", ListingMode: "infinito", Media: []mediaPageItem{{File: catalog.File{ID: "x", Name: "x.jpg", Kind: "image", Health: "damaged"}}}}
+	var out bytes.Buffer
+	if err := renderer.Render(&out, "photos", gallery); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"data-toggle-selection", "data-bulk-toolbar", "data-move-dialog", "Dañado"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("galería sin %q", want)
+		}
+	}
+	out.Reset()
+	settings := pageData{Title: "Configuración", CurrentPath: "/configuracion", User: &user, CSRFToken: "csrf", Settings: store.AppSettings{SyncIntervalMinutes: 30}, SettingsSyncText: "Cada 30 min"}
+	if err := renderer.Render(&out, "settings", settings); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Sincronizar ahora") || !strings.Contains(out.String(), "Cada 30 min") {
+		t.Fatal("configuración de sincronización incompleta")
+	}
+}

@@ -114,3 +114,39 @@ func TestUpsertPreservesFirstIndexedAt(t *testing.T) {
 		t.Fatalf("IndexedAt=%v want=%v", got.IndexedAt, first)
 	}
 }
+
+func TestDamagedFilesCanBeIgnoredAndMovedWithoutRescan(t *testing.T) {
+	c, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	file := File{ID: "old", StorageID: "s1", VirtualRoot: "A", RelativePath: "video.mp4", Name: "video.mp4", Kind: "video", Health: "damaged", HealthError: "truncado", ModTime: time.Now().UTC()}
+	if err := c.UpsertBatch(ctx, []File{file}); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(c.DamagedByStorage("s1", false)); got != 1 {
+		t.Fatalf("damaged=%d", got)
+	}
+	if count, err := c.IgnoreDamaged(ctx, "s1"); err != nil || count != 1 {
+		t.Fatalf("ignore count=%d err=%v", count, err)
+	}
+	if got := len(c.DamagedByStorage("s1", false)); got != 0 {
+		t.Fatalf("pending damaged=%d", got)
+	}
+	moved := file
+	moved.ID = "new"
+	moved.StorageID = "s2"
+	moved.VirtualRoot = "B"
+	moved.RelativePath = "Destino/video.mp4"
+	if err := c.MoveEntry(ctx, "old", moved); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := c.ByID("old"); ok {
+		t.Fatal("la entrada anterior debe desaparecer")
+	}
+	got, ok := c.ByID("new")
+	if !ok || got.StorageID != "s2" || got.RelativePath != "Destino/video.mp4" {
+		t.Fatalf("movimiento inesperado: %+v", got)
+	}
+}

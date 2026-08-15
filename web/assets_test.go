@@ -99,3 +99,24 @@ func TestGalleryIncludesVideoQualitySelector(t *testing.T) {
 		}
 	}
 }
+
+func TestBulkSelectionAndTouchActionsAreEmbedded(t *testing.T) {
+	data, err := fs.ReadFile(Assets, "static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	js := string(data)
+	for _, expected := range []string{
+		"data-toggle-selection",
+		"data-bulk-download",
+		"data-bulk-move",
+		"data-bulk-delete",
+		"event.pointerType !== 'touch'",
+		"window.setTimeout(() =>",
+		"showDownloadMenu(pressStartX, pressStartY",
+	} {
+		if !strings.Contains(js, expected) {
+			t.Fatalf("faltó comportamiento offline/reutilizable %q", expected)
+		}
+	}
+}

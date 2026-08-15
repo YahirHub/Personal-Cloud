@@ -173,8 +173,39 @@ func TestOpenMigratesVersion1WithoutLosingUser(t *testing.T) {
 	if !user.OnboardingCompleted {
 		t.Fatal("la migración perdió el onboarding existente")
 	}
-	if storage.state.Version != 2 {
+	if storage.state.Version != stateVersion {
 		t.Fatalf("versión migrada inesperada: %d", storage.state.Version)
+	}
+}
+
+func TestOpenMigratesVersion2FromR11WithoutLosingStorage(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "state.json")
+	legacy := `{"version":2,"users":[{"id":"u1","username":"admin","password_hash":"hash","role":"admin","onboarding_completed":true,"created_at":"2026-08-15T12:00:00Z"}],"sessions":[],"volumes":[{"id":"v1","persistent_id":"volume:test","name":"USB","virtual_root":"E","category":"mixed","idle_timeout_seconds":300,"auto_unmount":true,"registered_at":"2026-08-15T12:00:00Z","updated_at":"2026-08-15T12:00:00Z"}]}`
+	if err := os.WriteFile(statePath, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	storage, err := Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer storage.Close()
+	if storage.state.Version != stateVersion {
+		t.Fatalf("versión migrada inesperada: %d", storage.state.Version)
+	}
+	volumes, err := storage.ListStorageVolumes(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(volumes) != 1 || volumes[0].PersistentID != "volume:test" || volumes[0].VirtualRoot != "E" {
+		t.Fatalf("la migración perdió la unidad registrada: %+v", volumes)
+	}
+	settings, err := storage.Settings(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.SyncIntervalMinutes != 0 {
+		t.Fatalf("la sincronización periódica debe migrar desactivada, obtuvo %d", settings.SyncIntervalMinutes)
 	}
 }
 
@@ -208,5 +239,27 @@ func TestStorageVolumePersistsStableIdentityMetadata(t *testing.T) {
 	}
 	if got.PersistentID != volume.PersistentID || got.HardwareID != "fsserial:deadbeef" || !got.IdentityStable {
 		t.Fatalf("identidad persistida inesperada: %+v", got)
+	}
+}
+
+func TestSettingsPersistSyncInterval(t *testing.T) {
+	storage, err := Open(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	settings := AppSettings{SyncIntervalMinutes: 30, LastSyncAt: time.Now().UTC().Truncate(time.Second)}
+	if err := storage.UpdateSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	got, err := storage.Settings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SyncIntervalMinutes != 30 || !got.LastSyncAt.Equal(settings.LastSyncAt) {
+		t.Fatalf("settings=%+v", got)
+	}
+	if err := storage.UpdateSettings(ctx, AppSettings{SyncIntervalMinutes: 1}); err == nil {
+		t.Fatal("debe rechazar intervalos menores de 5 minutos")
 	}
 }

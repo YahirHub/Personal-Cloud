@@ -19,21 +19,25 @@ import (
 const catalogVersion = 1
 
 type File struct {
-	ID           string    `json:"id"`
-	StorageID    string    `json:"storage_id"`
-	VirtualRoot  string    `json:"virtual_root"`
-	RelativePath string    `json:"relative_path"`
-	Name         string    `json:"name"`
-	Kind         string    `json:"kind"`
-	MIME         string    `json:"mime"`
-	Size         int64     `json:"size"`
-	ModTime      time.Time `json:"mod_time"`
-	Width        int       `json:"width,omitempty"`
-	Height       int       `json:"height,omitempty"`
-	Thumbnail    bool      `json:"thumbnail,omitempty"`
-	Preview      bool      `json:"preview,omitempty"`
-	CacheVersion int       `json:"cache_version,omitempty"`
-	IndexedAt    time.Time `json:"indexed_at"`
+	ID              string    `json:"id"`
+	StorageID       string    `json:"storage_id"`
+	VirtualRoot     string    `json:"virtual_root"`
+	RelativePath    string    `json:"relative_path"`
+	Name            string    `json:"name"`
+	Kind            string    `json:"kind"`
+	MIME            string    `json:"mime"`
+	Size            int64     `json:"size"`
+	ModTime         time.Time `json:"mod_time"`
+	Width           int       `json:"width,omitempty"`
+	Height          int       `json:"height,omitempty"`
+	Thumbnail       bool      `json:"thumbnail,omitempty"`
+	Preview         bool      `json:"preview,omitempty"`
+	CacheVersion    int       `json:"cache_version,omitempty"`
+	Health          string    `json:"health,omitempty"`
+	HealthError     string    `json:"health_error,omitempty"`
+	HealthCheckedAt time.Time `json:"health_checked_at,omitempty"`
+	DamageIgnored   bool      `json:"damage_ignored,omitempty"`
+	IndexedAt       time.Time `json:"indexed_at"`
 }
 
 type snapshot struct {
@@ -288,6 +292,87 @@ func (c *Catalog) AllFiles() []File {
 		return left < right
 	})
 	return result
+}
+
+func (c *Catalog) DamagedByStorage(storageID string, includeIgnored bool) []File {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	result := make([]File, 0)
+	for _, file := range c.files {
+		if file.StorageID == storageID && file.Health == "damaged" && (includeIgnored || !file.DamageIgnored) {
+			result = append(result, file)
+		}
+	}
+	sort.SliceStable(result, func(i, j int) bool { return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name) })
+	return result
+}
+
+func (c *Catalog) IgnoreDamaged(ctx context.Context, storageID string) (int, error) {
+	items := c.DamagedByStorage(storageID, false)
+	if len(items) == 0 {
+		return 0, nil
+	}
+	for i := range items {
+		items[i].DamageIgnored = true
+	}
+	if err := c.UpsertBatch(ctx, items); err != nil {
+		return 0, err
+	}
+	return len(items), nil
+}
+
+// MoveEntry actualiza una entrada tras un movimiento físico ya confirmado. El ID cambia
+// porque forma parte de la identidad estable storage+ruta, pero no obliga a reindexar la unidad completa.
+func (c *Catalog) MoveEntry(ctx context.Context, oldID string, moved File) error {
+	if oldID == "" || moved.ID == "" {
+		return errors.New("movimiento de catálogo inválido")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if old, ok := c.files[oldID]; ok && moved.IndexedAt.IsZero() {
+		moved.IndexedAt = old.IndexedAt
+	}
+	c.seq++
+	deleteEvent, err := json.Marshal(event{Seq: c.seq, Op: "delete", ID: oldID})
+	if err != nil {
+		return err
+	}
+	c.seq++
+	upsertEvent, err := json.Marshal(event{Seq: c.seq, Op: "upsert", File: &moved})
+	if err != nil {
+		return err
+	}
+	data := append(append(deleteEvent, '\n'), upsertEvent...)
+	data = append(data, '\n')
+	if err := appendCatalogLog(c.logPath, data); err != nil {
+		return err
+	}
+	delete(c.files, oldID)
+	c.files[moved.ID] = moved
+	c.events += 2
+	return nil
+}
+
+func (c *Catalog) RemoveCache(file File) {
+	_ = os.Remove(c.CachePath(file.ID, "thumbnail"))
+	_ = os.Remove(c.CachePath(file.ID, "preview"))
+}
+
+func (c *Catalog) MoveCache(oldID, newID string) {
+	for _, size := range []string{"thumbnail", "preview"} {
+		from, to := c.CachePath(oldID, size), c.CachePath(newID, size)
+		if _, err := os.Stat(from); err != nil {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(to), 0o700); err != nil {
+			continue
+		}
+		_ = os.Remove(to)
+		_ = os.Rename(from, to)
+	}
 }
 
 func (c *Catalog) UpsertBatch(ctx context.Context, files []File) error {

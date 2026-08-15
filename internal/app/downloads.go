@@ -9,6 +9,7 @@ import (
 	"errors"
 	"mime"
 	"net/http"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -91,6 +92,11 @@ func (a *App) secureDownloadGet(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, storagepkg.ErrOffline) {
 			http.Error(w, "La unidad que contiene este archivo no está conectada.", http.StatusServiceUnavailable)
+			return
+		}
+		if errors.Is(err, os.ErrNotExist) {
+			a.forgetMissingFile(r.Context(), file)
+			http.NotFound(w, r)
 			return
 		}
 		http.Error(w, "No se pudo abrir el archivo.", http.StatusInternalServerError)

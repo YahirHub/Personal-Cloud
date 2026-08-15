@@ -2,15 +2,16 @@
 <section class="page" data-gallery-page>
   <header class="page-header page-header-actions">
     <div><div class="eyebrow">Catálogo multimedia</div><h1>Galería</h1><p class="muted">Solo muestra contenido de unidades conectadas. Las miniaturas siguen disponibles aunque una unidad esté desmontada por inactividad.</p></div>
-    <div class="header-tools">{{template "listing-controls" .}}<button class="icon-button filter-button" type="button" data-open-gallery-filter aria-label="Filtrar y ordenar" title="Filtrar y ordenar">{{template "icon-filter" .}}{{if gt .GalleryFilters 0}}<span class="filter-count">{{.GalleryFilters}}</span>{{end}}</button></div>
+    <div class="header-tools">{{template "listing-controls" .}}<button class="icon-button filter-button" type="button" data-open-gallery-filter aria-label="Filtrar y ordenar" title="Filtrar y ordenar">{{template "icon-filter" .}}{{if gt .GalleryFilters 0}}<span class="filter-count">{{.GalleryFilters}}</span>{{end}}</button><button class="icon-button" type="button" data-toggle-selection aria-label="Seleccionar elementos" title="Seleccionar elementos">{{template "icon-more" .}}</button></div>
   </header>
 
   {{if .Media}}
   <div class="photo-grid" data-gallery-grid data-mode="{{.ListingMode}}" data-next="{{.MediaNext}}" data-has-more="{{.MediaHasMore}}">
     {{range .Media}}
-    <button class="photo-card media-card" type="button" data-media-id="{{.ID}}" data-download-file-id="{{.ID}}" data-storage-id="{{.StorageID}}" data-kind="{{.Kind}}" data-name="{{.Name}}" data-original="{{.OriginalURL}}" data-preview="{{.PreviewURL}}" data-thumbnail="{{.ThumbnailURL}}" data-cache-version="{{.CacheVersion}}" title="Abrir {{.Name}}">
+    <button class="photo-card media-card{{if eq .Health "damaged"}} is-damaged{{end}}" type="button" data-media-id="{{.ID}}" data-selectable-file="{{.ID}}" data-download-file-id="{{.ID}}" data-storage-id="{{.StorageID}}" data-kind="{{.Kind}}" data-name="{{.Name}}" data-original="{{.OriginalURL}}" data-preview="{{.PreviewURL}}" data-thumbnail="{{.ThumbnailURL}}" data-cache-version="{{.CacheVersion}}" title="Abrir {{.Name}}">
       {{if .ThumbnailURL}}<img src="{{.ThumbnailURL}}" loading="lazy" alt="">{{else}}<div class="photo-placeholder">{{if eq .Kind "video"}}▶{{else if eq .Kind "audio"}}♪{{else}}▧{{end}}</div>{{end}}
-      {{if eq .Kind "video"}}<span class="media-badge">Video</span>{{else if eq .Kind "audio"}}<span class="media-badge">Audio</span>{{end}}
+      <span class="selection-check" aria-hidden="true">{{template "icon-check" .}}</span>
+      {{if eq .Health "damaged"}}<span class="media-badge media-badge-danger">Dañado</span>{{else if eq .Kind "video"}}<span class="media-badge">Video</span>{{else if eq .Kind "audio"}}<span class="media-badge">Audio</span>{{end}}
       <div class="photo-meta"><strong>{{.Name}}</strong><small>{{formatTime .ModTime}} · {{formatBytes .Size}}</small></div>
     </button>
     {{end}}
@@ -22,6 +23,7 @@
 </section>
 
 {{template "gallery-filters" .}}
+{{template "bulk-actions" .}}
 
 <dialog class="media-viewer" data-media-viewer>
   <div class="viewer-shell" data-viewer-shell>

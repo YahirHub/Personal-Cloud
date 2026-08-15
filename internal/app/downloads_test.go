@@ -1,6 +1,7 @@
 package app
 
 import (
+	"archive/zip"
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
@@ -49,5 +50,29 @@ func TestRemoteDownloadRequiresHTTPS(t *testing.T) {
 	a.downloadTicketPost(rr, req)
 	if rr.Code != http.StatusUpgradeRequired {
 		t.Fatalf("status=%d want=%d", rr.Code, http.StatusUpgradeRequired)
+	}
+}
+
+func TestUniqueZipNameAvoidsCollisionsWithoutLoadingFiles(t *testing.T) {
+	used := map[string]int{}
+	got := []string{uniqueZipName("video.mp4", used), uniqueZipName("video.mp4", used), uniqueZipName("video.mp4", used)}
+	want := []string{"video.mp4", "video (2).mp4", "video (3).mp4"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got=%v want=%v", got, want)
+		}
+	}
+}
+
+func TestZipMethodAvoidsRecompressingMedia(t *testing.T) {
+	for _, name := range []string{"foto.jpg", "video.mp4", "audio.mp3", "documento.pdf", "paquete.zip"} {
+		if got := zipMethodFor(name); got != zip.Store {
+			t.Fatalf("%s debe usar Store, obtuvo %d", name, got)
+		}
+	}
+	for _, name := range []string{"notas.txt", "datos.json", "codigo.go"} {
+		if got := zipMethodFor(name); got != zip.Deflate {
+			t.Fatalf("%s debe usar Deflate, obtuvo %d", name, got)
+		}
 	}
 }

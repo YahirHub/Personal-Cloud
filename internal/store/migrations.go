@@ -16,6 +16,9 @@ func migrateState(state persistedState) (persistedState, bool, error) {
 	}
 	if state.Version == 1 {
 		state.Version = 2
+	}
+	if state.Version == 2 {
+		state.Version = 3
 		return state, true, nil
 	}
 	if state.Version < stateVersion {
@@ -54,6 +57,9 @@ func validateState(state persistedState) error {
 	}
 	if adminCount > 1 {
 		return errors.New("hay más de un administrador bootstrap")
+	}
+	if state.Settings.SyncIntervalMinutes < 0 || state.Settings.SyncIntervalMinutes > 10080 || (state.Settings.SyncIntervalMinutes > 0 && state.Settings.SyncIntervalMinutes < 5) {
+		return errors.New("intervalo de sincronización inválido")
 	}
 
 	sessionIDs := make(map[string]struct{}, len(state.Sessions))

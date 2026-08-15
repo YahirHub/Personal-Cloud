@@ -31,6 +31,8 @@ func (a *App) requestLog(next http.Handler) http.Handler {
 		logPath := r.URL.Path
 		if strings.HasPrefix(logPath, "/descarga/") {
 			logPath = "/descarga/{token}"
+		} else if strings.HasPrefix(logPath, "/descarga-lote/") {
+			logPath = "/descarga-lote/{token}"
 		}
 		a.logger.Info("http", "method", r.Method, "path", logPath, "ip", a.clientIP(r), "elapsed_ms", time.Since(start).Milliseconds())
 	})

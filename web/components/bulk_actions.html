@@ -1,0 +1,27 @@
+{{define "bulk-actions"}}
+<div class="bulk-toolbar" data-bulk-toolbar hidden>
+  <strong><span data-selection-count>0</span> seleccionados</strong>
+  <div class="bulk-toolbar-actions">
+    <button class="button button-secondary" type="button" data-bulk-download>{{template "icon-download" .}} Descargar ZIP</button>
+    <button class="button button-secondary" type="button" data-bulk-move>{{template "icon-move" .}} Mover</button>
+    <button class="button button-danger" type="button" data-bulk-delete>{{template "icon-trash" .}} Eliminar</button>
+    <button class="button button-ghost" type="button" data-selection-cancel>Cancelar</button>
+  </div>
+</div>
+<dialog class="move-dialog" data-move-dialog>
+  <form class="dialog-card" data-move-form>
+    <div class="dialog-head"><div><div class="eyebrow">Mover elementos</div><h2>Selecciona destino</h2></div><button class="icon-button" type="button" data-close-move aria-label="Cerrar">{{template "icon-close" .}}</button></div>
+    <label>Unidad de destino
+      <select name="destination_root" required>
+        <option value="">Seleccionar…</option>
+        {{range .MoveDestinations}}<option value="{{.VirtualRoot}}" {{if or (not .Online) .ReadOnly}}disabled{{end}}>{{if .Online}}●{{else}}○{{end}} {{.Name}} · /{{.VirtualRoot}}{{if .ReadOnly}} · solo lectura{{end}}</option>{{end}}
+      </select>
+    </label>
+    <label>Carpeta de destino
+      <input name="target_dir" placeholder="Ej. Videos/Vacaciones">
+      <small>Si no existe, Personal Cloud la creará. Deja vacío para usar la raíz de la unidad.</small>
+    </label>
+    <div class="button-row"><button class="button button-secondary" type="button" data-close-move>Cancelar</button><button class="button button-primary" type="submit">Mover</button></div>
+  </form>
+</dialog>
+{{end}}

@@ -42,9 +42,12 @@ type App struct {
 	streamer          *streaming.Manager
 	webdav            *webdavserver.Server
 	davAuthMu         sync.Mutex
+	batchMu           sync.Mutex
 	davAuthSecret     [32]byte
 	downloadSecret    [32]byte
 	davAuthCache      map[string]davAuthCacheEntry
+	batchDownloads    map[string]batchDownload
+	batchZIP          chan struct{}
 	lastBackupDay     string
 	stop              chan struct{}
 	stopOnce          sync.Once
@@ -89,6 +92,9 @@ type pageData struct {
 	ExplorerHasMore    bool
 	ExplorerNext       int
 	MaxUploadBytes     int64
+	Settings           store.AppSettings
+	SettingsSyncText   string
+	MoveDestinations   []moveDestination
 }
 
 type contextKey string
@@ -100,6 +106,7 @@ var (
 	loginIPPolicy        = ratelimit.Policy{MaxAttempts: 12, Window: 15 * time.Minute}
 	loginUserPolicy      = ratelimit.Policy{MaxAttempts: 6, Window: 15 * time.Minute}
 	downloadTicketPolicy = ratelimit.Policy{MaxAttempts: 120, Window: time.Minute}
+	bulkActionPolicy     = ratelimit.Policy{MaxAttempts: 30, Window: time.Minute}
 	videoTranscodePolicy = ratelimit.Policy{MaxAttempts: 20, Window: time.Hour}
 )
 
@@ -159,6 +166,8 @@ func New(cfg config.Config, storage *store.Store, logger *slog.Logger) (*App, er
 		davAuthSecret:     davAuthSecret,
 		downloadSecret:    downloadSecret,
 		davAuthCache:      make(map[string]davAuthCacheEntry),
+		batchDownloads:    make(map[string]batchDownload),
+		batchZIP:          make(chan struct{}, 1),
 		stop:              make(chan struct{}),
 	}
 
@@ -243,6 +252,15 @@ func (a *App) routes() {
 	a.mux.Handle("POST /almacenamiento/{id}/montar", a.requireAuth(http.HandlerFunc(a.storageMountPost)))
 	a.mux.Handle("POST /almacenamiento/{id}/desmontar", a.requireAuth(http.HandlerFunc(a.storageUnmountPost)))
 	a.mux.Handle("POST /almacenamiento/{id}/indexar", a.requireAuth(http.HandlerFunc(a.storageIndexPost)))
+	a.mux.Handle("POST /almacenamiento/{id}/danados/omitir", a.requireAuth(http.HandlerFunc(a.storageIgnoreDamagedPost)))
+	a.mux.Handle("POST /almacenamiento/{id}/danados/eliminar", a.requireAuth(http.HandlerFunc(a.storageDeleteDamagedPost)))
+	a.mux.Handle("GET /configuracion", a.requireAuth(http.HandlerFunc(a.settingsGet)))
+	a.mux.Handle("POST /configuracion/sincronizacion", a.requireAuth(http.HandlerFunc(a.settingsSyncPost)))
+	a.mux.Handle("POST /configuracion/sincronizar", a.requireAuth(http.HandlerFunc(a.settingsSyncNowPost)))
+	a.mux.Handle("POST /api/elementos/mover", a.requireAuth(http.HandlerFunc(a.elementsMovePost)))
+	a.mux.Handle("POST /api/elementos/eliminar", a.requireAuth(http.HandlerFunc(a.elementsDeletePost)))
+	a.mux.Handle("POST /api/elementos/descargar", a.requireAuth(http.HandlerFunc(a.batchDownloadTicketPost)))
+	a.mux.Handle("GET /descarga-lote/{token}", a.requireAuth(http.HandlerFunc(a.batchDownloadGet)))
 	a.mux.HandleFunc("GET /salud", a.healthGet)
 	a.mux.Handle("/webdav", a.webdavAuth(a.webdav))
 	a.mux.Handle("/webdav/", a.webdavAuth(a.webdav))
@@ -250,13 +268,21 @@ func (a *App) routes() {
 
 func (a *App) housekeeping() {
 	a.backupMetadataIfNeeded()
-	ticker := time.NewTicker(30 * time.Minute)
+	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
+	maintenanceTicks := 0
 	for {
 		select {
 		case <-a.stop:
 			return
 		case <-ticker.C:
+			a.periodicSyncIfNeeded()
+			a.cleanupBatchDownloads()
+			maintenanceTicks++
+			if maintenanceTicks < 30 {
+				continue
+			}
+			maintenanceTicks = 0
 			a.limiter.Cleanup()
 			if a.streamer != nil {
 				a.streamer.Cleanup()

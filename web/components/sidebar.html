@@ -6,6 +6,7 @@
     <a class="nav-link {{if eq .CurrentPath "/almacenamiento"}}active{{end}}" href="/almacenamiento">{{template "icon-storage" .}}<span>Almacenamiento</span></a>
     <a class="nav-link {{if eq .CurrentPath "/archivos"}}active{{end}}" href="/archivos">{{template "icon-files" .}}<span>Archivos</span></a>
     <a class="nav-link {{if eq .CurrentPath "/galeria"}}active{{end}}" href="/galeria">{{template "icon-gallery" .}}<span>Galería</span></a>
+    <a class="nav-link {{if eq .CurrentPath "/configuracion"}}active{{end}}" href="/configuracion">{{template "icon-settings" .}}<span>Configuración</span></a>
   </nav>
   <div class="sidebar-footer">
     <div class="user-chip"><span class="avatar">{{if .User}}{{slice .User.Username 0 1}}{{end}}</span><div><strong>{{if .User}}{{.User.Username}}{{end}}</strong><small>{{if .User}}{{.User.Role}}{{end}}</small></div></div>

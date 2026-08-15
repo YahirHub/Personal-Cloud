@@ -33,14 +33,15 @@ func (a *App) filesGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := a.csrfData(w, r, pageData{
-		Title:          "Archivos",
-		Description:    "Explora el namespace virtual sin mantener todas las unidades montadas.",
-		CurrentPath:    "/archivos",
-		User:           user,
-		ExplorerPath:   current,
-		Breadcrumbs:    explorerBreadcrumbs(current),
-		MaxUploadBytes: a.cfg.MaxUploadBytes,
-		ListingMode:    mode,
+		Title:            "Archivos",
+		Description:      "Explora el namespace virtual sin mantener todas las unidades montadas.",
+		CurrentPath:      "/archivos",
+		User:             user,
+		ExplorerPath:     current,
+		Breadcrumbs:      explorerBreadcrumbs(current),
+		MaxUploadBytes:   a.cfg.MaxUploadBytes,
+		ListingMode:      mode,
+		MoveDestinations: a.moveDestinations(r.Context()),
 	})
 	if discoverErr != nil {
 		data.StorageError = discoverErr.Error()
@@ -359,6 +360,7 @@ func browseCatalog(files []catalog.File, relative string, view storagepkg.View) 
 			DownloadURL: "/archivo/" + file.ID + "/original",
 			Offline:     !view.Online,
 			StorageName: view.Name,
+			Health:      file.Health,
 		})
 	}
 	for _, directory := range directories {

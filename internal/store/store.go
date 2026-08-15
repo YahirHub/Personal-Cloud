@@ -22,7 +22,7 @@ var (
 	ErrAdminExists = errors.New("ya existe un administrador")
 )
 
-const stateVersion = 2
+const stateVersion = 3
 
 type Store struct {
 	mu        sync.RWMutex
@@ -36,6 +36,13 @@ type persistedState struct {
 	Users    []User          `json:"users"`
 	Sessions []Session       `json:"sessions"`
 	Volumes  []StorageVolume `json:"volumes,omitempty"`
+	Settings AppSettings     `json:"settings,omitempty"`
+}
+
+// AppSettings contiene únicamente configuración global pequeña. El catálogo grande se mantiene separado.
+type AppSettings struct {
+	SyncIntervalMinutes int       `json:"sync_interval_minutes"`
+	LastSyncAt          time.Time `json:"last_sync_at,omitempty"`
 }
 
 type User struct {
@@ -273,6 +280,38 @@ func (s *Store) CompleteOnboarding(ctx context.Context, userID string) error {
 			}
 		}
 		return ErrNotFound
+	})
+}
+
+func (s *Store) Settings(ctx context.Context) (AppSettings, error) {
+	if err := ctx.Err(); err != nil {
+		return AppSettings{}, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.state.Settings, nil
+}
+
+func (s *Store) UpdateSettings(ctx context.Context, settings AppSettings) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if settings.SyncIntervalMinutes < 0 || settings.SyncIntervalMinutes > 10080 {
+		return errors.New("intervalo de sincronización inválido")
+	}
+	if settings.SyncIntervalMinutes > 0 && settings.SyncIntervalMinutes < 5 {
+		return errors.New("el intervalo mínimo de sincronización es 5 minutos")
+	}
+	return s.mutate(ctx, func(next *persistedState) error {
+		next.Settings = settings
+		return nil
+	})
+}
+
+func (s *Store) MarkSync(ctx context.Context, when time.Time) error {
+	return s.mutate(ctx, func(next *persistedState) error {
+		next.Settings.LastSyncAt = when.UTC()
+		return nil
 	})
 }
 

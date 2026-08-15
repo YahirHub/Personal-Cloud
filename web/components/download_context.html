@@ -1,5 +1,7 @@
 {{define "download-context"}}
 <div class="context-menu" data-download-menu hidden role="menu" aria-label="Acciones del archivo">
   <button type="button" role="menuitem" data-secure-download>{{template "icon-download" .}}<span>Descargar</span></button>
+  <button type="button" role="menuitem" data-context-move>{{template "icon-move" .}}<span>Mover</span></button>
+  <button type="button" role="menuitem" class="danger" data-context-delete>{{template "icon-trash" .}}<span>Eliminar</span></button>
 </div>
 {{end}}
