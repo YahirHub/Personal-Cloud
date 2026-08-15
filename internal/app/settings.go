@@ -17,8 +17,8 @@ func (a *App) settingsGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := a.csrfData(w, r, pageData{
-		Title: "Configuración", Description: "Sincronización y mantenimiento del catálogo.", CurrentPath: "/configuracion", User: user,
-		Settings: settings, SettingsSyncText: syncIntervalText(settings.SyncIntervalMinutes),
+		Title: "Configuración", Description: "Sincronización, integridad y mantenimiento del catálogo.", CurrentPath: "/configuracion", User: user,
+		Settings: settings, SettingsSyncText: syncIntervalText(settings.SyncIntervalMinutes), IntegrityUnits: a.integrityUnitViews(r.Context()),
 	})
 	if value := r.URL.Query().Get("ok"); value != "" {
 		data.Info = value
@@ -59,6 +59,78 @@ func (a *App) settingsSyncNowPost(w http.ResponseWriter, r *http.Request) {
 	_ = a.store.Audit(r.Context(), user.ID, "sync_manual", fmt.Sprintf("unidades:%d", count), a.clientIP(r))
 	message := fmt.Sprintf("Sincronización solicitada para %d unidad(es) conectada(s)", count)
 	http.Redirect(w, r, "/configuracion?ok="+urlQuery(message), http.StatusSeeOther)
+}
+
+func (a *App) settingsSyncUnitPost(w http.ResponseWriter, r *http.Request) {
+	if !a.parseProtectedForm(w, r) {
+		return
+	}
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" || !a.storageOnline(r, id) {
+		redirectSettingsError(w, r, "La unidad no está conectada")
+		return
+	}
+	a.indexer.Enqueue(id)
+	user := userFromContext(r.Context())
+	_ = a.store.Audit(r.Context(), user.ID, "sync_unit_manual", "unidad:"+id, a.clientIP(r))
+	http.Redirect(w, r, "/configuracion?ok="+urlQuery("Sincronización de unidad solicitada"), http.StatusSeeOther)
+}
+
+func (a *App) settingsVerifyNowPost(w http.ResponseWriter, r *http.Request) {
+	if !a.parseProtectedForm(w, r) {
+		return
+	}
+	ids, err := a.storageManager.OnlineRegisteredIDs(r.Context())
+	if err != nil {
+		redirectSettingsError(w, r, "No se pudieron consultar las unidades conectadas")
+		return
+	}
+	count := 0
+	for id := range ids {
+		if a.indexer.EnqueueVerify(id) {
+			count++
+		}
+	}
+	user := userFromContext(r.Context())
+	_ = a.store.Audit(r.Context(), user.ID, "integrity_verify_manual", fmt.Sprintf("unidades:%d", count), a.clientIP(r))
+	http.Redirect(w, r, "/configuracion?ok="+urlQuery(fmt.Sprintf("Verificación de integridad solicitada para %d unidad(es)", count)), http.StatusSeeOther)
+}
+
+func (a *App) settingsVerifyUnitPost(w http.ResponseWriter, r *http.Request) {
+	if !a.parseProtectedForm(w, r) {
+		return
+	}
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" || !a.storageOnline(r, id) {
+		redirectSettingsError(w, r, "La unidad no está conectada")
+		return
+	}
+	a.indexer.EnqueueVerify(id)
+	user := userFromContext(r.Context())
+	_ = a.store.Audit(r.Context(), user.ID, "integrity_verify_unit", "unidad:"+id, a.clientIP(r))
+	http.Redirect(w, r, "/configuracion?ok="+urlQuery("Verificación de integridad solicitada"), http.StatusSeeOther)
+}
+
+func (a *App) integrityUnitViews(ctx context.Context) []integrityUnitView {
+	views, _ := a.storageManager.Views(ctx)
+	out := make([]integrityUnitView, 0, len(views))
+	for _, view := range views {
+		if !view.Registered {
+			continue
+		}
+		counts := a.catalog.HealthCountsByStorage(view.ID)
+		samples := a.catalog.DamagedByStorage(view.ID, false)
+		if len(samples) > 5 {
+			samples = samples[:5]
+		}
+		job := a.indexer.Status(view.ID)
+		out = append(out, integrityUnitView{
+			ID: view.ID, Name: view.Name, VirtualRoot: view.VirtualRoot, Online: view.Online,
+			Damaged: counts.Damaged, DamagedPending: counts.DamagedPending, Unchecked: counts.Unchecked, Healthy: counts.OK,
+			Samples: samples, Job: job, JobPercent: job.Percent(),
+		})
+	}
+	return out
 }
 
 func (a *App) periodicSyncIfNeeded() {

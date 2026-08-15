@@ -17,7 +17,8 @@
 
   // Progreso de indexación en vivo.
   const indexCards = $$('[data-index-card]');
-  if (indexCards.length) {
+  const settingsIndexCards = $$('[data-settings-index-card]');
+  if (indexCards.length || settingsIndexCards.length) {
     const updateIndexProgress = async () => {
       try {
         const response = await fetch('/api/indexacion', { headers: { Accept: 'application/json' }, cache: 'no-store' });
@@ -57,6 +58,27 @@
             if (damagedCount) damagedCount.textContent = String(job.damaged || 0);
           }
         });
+        settingsIndexCards.forEach((card) => {
+          const job = byID.get(card.dataset.settingsIndexCard);
+          if (!job) return;
+          const bar = $('[data-settings-index-bar]', card);
+          const label = $('[data-settings-index-label]', card);
+          const percent = $('[data-settings-index-percent]', card);
+          const detail = $('[data-settings-index-detail]', card);
+          if (bar) bar.value = job.percent || 0;
+          if (percent) percent.textContent = `${job.percent || 0}%`;
+          if (label) {
+            if (job.state === 'queued') label.textContent = 'En cola…';
+            else if (job.state === 'counting') label.textContent = job.verify_all ? 'Contando para verificar integridad…' : 'Contando archivos…';
+            else if (job.state === 'scanning') label.textContent = `${job.verify_all ? 'Verificando' : 'Sincronizando'} ${job.scanned || 0} / ${job.total || 0}`;
+            else if (job.state === 'done') label.textContent = job.verify_all ? 'Verificación de integridad completa' : 'Sincronización completa';
+            else if (job.state === 'error') label.textContent = `Error: ${job.error || 'desconocido'}`;
+          }
+          if (detail) detail.textContent = `+${job.added || 0} nuevos · ${job.changed || 0} modificados · ${job.removed || 0} eliminados · ${job.damaged || 0} dañados · ${job.unchecked || 0} sin verificar`;
+          const previousState = card.dataset.jobState || '';
+          card.dataset.jobState = job.state || '';
+          if (['queued','counting','scanning'].includes(previousState) && job.state === 'done') window.setTimeout(() => window.location.reload(), 350);
+        });
       } catch (_) {}
     };
     updateIndexProgress();
@@ -74,8 +96,11 @@
   $('[data-close-gallery-filter]')?.addEventListener('click', () => filterDialog?.close());
   filterDialog?.addEventListener('click', (event) => { if (event.target === filterDialog) filterDialog.close(); });
   $$('[data-icon-select]').forEach((select) => {
-    const leading = select.closest('.select-with-icon')?.querySelector('.select-leading');
-    const refresh = () => { if (leading) leading.textContent = select.selectedOptions[0]?.dataset.icon || '•'; };
+    const wrapper = select.closest('.select-with-icon');
+    const refresh = () => {
+      const value = select.value;
+      $$('[data-select-icon]', wrapper).forEach((icon) => { icon.hidden = icon.dataset.selectIcon !== value; });
+    };
     select.addEventListener('change', refresh);
     refresh();
   });
@@ -603,8 +628,45 @@
   const selectionCount = $('[data-selection-count]');
   const moveDialog = $('[data-move-dialog]');
   const moveForm = $('[data-move-form]', moveDialog);
+  const moveRoot = $('[data-move-root]', moveForm);
+  const folderPicker = $('[data-folder-picker]', moveForm);
+  const folderList = $('[data-folder-list]', moveForm);
+  const folderCurrent = $('[data-folder-current]', moveForm);
+  const moveTargetDir = $('[data-move-target-dir]', moveForm);
+  const newFolderInput = $('[data-new-folder]', moveForm);
   let actionIDs = [];
   let longPressFired = false;
+  let moveFolderPath = '';
+
+  const renderFolderPicker = (data) => {
+    moveFolderPath = data.path || '';
+    if (moveTargetDir) moveTargetDir.value = moveFolderPath;
+    if (folderCurrent) folderCurrent.textContent = `/${data.root || ''}${moveFolderPath ? `/${moveFolderPath}` : ''}`;
+    if (!folderList) return;
+    folderList.replaceChildren();
+    if (!data.folders?.length) {
+      const empty = document.createElement('span'); empty.className = 'muted'; empty.textContent = 'No hay subcarpetas aquí.'; folderList.append(empty); return;
+    }
+    data.folders.forEach((folder) => {
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'folder-choice';
+      button.innerHTML = '<span class="folder-choice-icon">▣</span><span></span>';
+      button.lastElementChild.textContent = folder.name;
+      button.addEventListener('click', () => loadMoveFolders(folder.path));
+      folderList.append(button);
+    });
+  };
+  const loadMoveFolders = async (targetPath = '') => {
+    if (!moveRoot?.value) { if (folderPicker) folderPicker.hidden = true; return; }
+    if (folderPicker) folderPicker.hidden = false;
+    if (folderList) folderList.innerHTML = '<span class="muted">Cargando carpetas…</span>';
+    try {
+      const query = new URLSearchParams({ root: moveRoot.value, path: targetPath });
+      const response = await fetch(`/api/carpetas?${query}`, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'No se pudieron leer las carpetas.');
+      renderFolderPicker(data);
+    } catch (error) { if (folderList) folderList.textContent = error.message; }
+  };
 
   const refreshSelectionUI = () => {
     $$('[data-selectable-file]').forEach((element) => element.classList.toggle('is-selected', selectedIDs.has(element.dataset.selectableFile)));
@@ -669,11 +731,34 @@
     if (!actionIDs.length) return;
     hideDownloadMenu();
     if (viewer?.open) viewer.close();
+    moveFolderPath = '';
+    if (moveTargetDir) moveTargetDir.value = '';
+    if (newFolderInput) newFolderInput.value = '';
     moveDialog?.showModal();
+    if (moveRoot?.value) loadMoveFolders('');
   };
   $('[data-bulk-move]')?.addEventListener('click', () => openMoveDialog(selectedIDs));
   $$('[data-close-move]').forEach((button) => button.addEventListener('click', () => moveDialog?.close()));
   moveDialog?.addEventListener('click', (event) => { if (event.target === moveDialog) moveDialog.close(); });
+  moveRoot?.addEventListener('change', () => loadMoveFolders(''));
+  $('[data-folder-up]', moveForm)?.addEventListener('click', () => {
+    const parts = moveFolderPath.split('/').filter(Boolean); parts.pop(); loadMoveFolders(parts.join('/'));
+  });
+  moveTargetDir?.addEventListener('input', () => { moveFolderPath = moveTargetDir.value.trim().replace(/^\/+|\/+$/g, ''); });
+  $('[data-create-folder]', moveForm)?.addEventListener('click', async () => {
+    const name = newFolderInput?.value.trim() || '';
+    if (!moveRoot?.value || !name) return;
+    try {
+      const response = await fetch('/api/carpetas/crear', {
+        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', Accept: 'application/json' },
+        body: new URLSearchParams({ csrf_token: csrfToken, destination_root: moveRoot.value, parent: moveFolderPath, name }), cache: 'no-store'
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'No se pudo crear la carpeta.');
+      if (newFolderInput) newFolderInput.value = '';
+      await loadMoveFolders(data.path || moveFolderPath);
+    } catch (error) { window.alert(error.message); }
+  });
   moveForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(moveForm);

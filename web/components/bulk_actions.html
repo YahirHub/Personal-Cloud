@@ -10,18 +10,23 @@
 </div>
 <dialog class="move-dialog" data-move-dialog>
   <form class="dialog-card" data-move-form>
-    <div class="dialog-head"><div><div class="eyebrow">Mover elementos</div><h2>Selecciona destino</h2></div><button class="icon-button" type="button" data-close-move aria-label="Cerrar">{{template "icon-close" .}}</button></div>
+    <div class="dialog-head"><div><div class="eyebrow">Mover elementos</div><h2>Selecciona destino</h2><p class="muted compact-copy">Puedes navegar carpetas existentes o crear una nueva antes de mover.</p></div><button class="icon-button" type="button" data-close-move aria-label="Cerrar">{{template "icon-close" .}}</button></div>
     <label>Unidad de destino
-      <select name="destination_root" required>
+      <select name="destination_root" required data-move-root>
         <option value="">Seleccionar…</option>
         {{range .MoveDestinations}}<option value="{{.VirtualRoot}}" {{if or (not .Online) .ReadOnly}}disabled{{end}}>{{if .Online}}●{{else}}○{{end}} {{.Name}} · /{{.VirtualRoot}}{{if .ReadOnly}} · solo lectura{{end}}</option>{{end}}
       </select>
     </label>
-    <label>Carpeta de destino
-      <input name="target_dir" placeholder="Ej. Videos/Vacaciones">
-      <small>Si no existe, Personal Cloud la creará. Deja vacío para usar la raíz de la unidad.</small>
+    <div class="folder-picker" data-folder-picker hidden>
+      <div class="folder-picker-head"><div><small>Carpeta elegida</small><strong data-folder-current>/</strong></div><button class="button button-ghost button-small" type="button" data-folder-up>Subir nivel</button></div>
+      <div class="folder-list" data-folder-list><span class="muted">Selecciona una unidad.</span></div>
+      <div class="folder-create-row"><input name="new_folder" data-new-folder placeholder="Nueva carpeta"><button class="button button-secondary" type="button" data-create-folder>{{template "icon-folder-plus" .}} Crear carpeta</button></div>
+    </div>
+    <label>Ruta relativa
+      <input name="target_dir" data-move-target-dir placeholder="Ej. Videos/Vacaciones" autocomplete="off">
+      <small>También puedes escribir una ruta. Si no existe, se creará de forma segura al mover.</small>
     </label>
-    <div class="button-row"><button class="button button-secondary" type="button" data-close-move>Cancelar</button><button class="button button-primary" type="submit">Mover</button></div>
+    <div class="button-row"><button class="button button-secondary" type="button" data-close-move>Cancelar</button><button class="button button-primary" type="submit">{{template "icon-move" .}} Mover aquí</button></div>
   </form>
 </dialog>
 {{end}}

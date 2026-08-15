@@ -51,6 +51,20 @@ type explorerRoot struct {
 	Offline    bool
 }
 
+type integrityUnitView struct {
+	ID             string
+	Name           string
+	VirtualRoot    string
+	Online         bool
+	Damaged        int
+	DamagedPending int
+	Unchecked      int
+	Healthy        int
+	Samples        []catalog.File
+	Job            catalog.JobStatus
+	JobPercent     int
+}
+
 type dashboardStats struct {
 	Volumes int
 	Online  int

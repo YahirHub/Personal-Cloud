@@ -20,7 +20,7 @@ func (a *App) storageIgnoreDamagedPost(w http.ResponseWriter, r *http.Request) {
 	}
 	user := userFromContext(r.Context())
 	_ = a.store.Audit(r.Context(), user.ID, "damaged_ignore", fmt.Sprintf("correcto:%d", count), a.clientIP(r))
-	http.Redirect(w, r, "/almacenamiento?ok="+urlQuery(fmt.Sprintf("Se omitió el aviso de %d elemento(s) dañado(s)", count)), http.StatusSeeOther)
+	redirectDamagedResult(w, r, fmt.Sprintf("Se omitió el aviso de %d elemento(s) dañado(s)", count))
 }
 
 func (a *App) storageDeleteDamagedPost(w http.ResponseWriter, r *http.Request) {
@@ -47,5 +47,13 @@ func (a *App) storageDeleteDamagedPost(w http.ResponseWriter, r *http.Request) {
 	}
 	user := userFromContext(r.Context())
 	_ = a.store.Audit(r.Context(), user.ID, "damaged_delete", fmt.Sprintf("correcto:%d", deleted), a.clientIP(r))
-	http.Redirect(w, r, "/almacenamiento?ok="+urlQuery(fmt.Sprintf("Se eliminaron %d elemento(s) dañado(s)", deleted)), http.StatusSeeOther)
+	redirectDamagedResult(w, r, fmt.Sprintf("Se eliminaron %d elemento(s) dañado(s)", deleted))
+}
+
+func redirectDamagedResult(w http.ResponseWriter, r *http.Request, message string) {
+	base := "/almacenamiento"
+	if r.FormValue("return_to") == "configuracion" {
+		base = "/configuracion"
+	}
+	http.Redirect(w, r, base+"?ok="+urlQuery(message), http.StatusSeeOther)
 }

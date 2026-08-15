@@ -428,3 +428,80 @@ func writeJSONError(w http.ResponseWriter, err error, status int) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": err.Error()})
 }
+
+func (a *App) moveFoldersGet(w http.ResponseWriter, r *http.Request) {
+	root := strings.Trim(strings.TrimSpace(r.URL.Query().Get("root")), "/")
+	if root == "" {
+		writeJSONError(w, errors.New("selecciona una unidad"), http.StatusBadRequest)
+		return
+	}
+	cfg, err := a.store.StorageVolumeByVirtualRoot(r.Context(), root)
+	if err != nil {
+		writeJSONError(w, errors.New("unidad no válida"), http.StatusBadRequest)
+		return
+	}
+	if !a.storageOnline(r, cfg.ID) {
+		writeJSONError(w, errors.New("la unidad no está conectada"), http.StatusConflict)
+		return
+	}
+	dir, err := safeVirtualSubdir(r.URL.Query().Get("path"))
+	if err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	virtual := "/" + cfg.VirtualRoot
+	if dir != "" {
+		virtual = path.Join(virtual, dir)
+	}
+	entries, err := a.vfs.ReadDir(r.Context(), virtual)
+	if err != nil {
+		writeJSONError(w, fmt.Errorf("leer carpeta: %w", err), http.StatusConflict)
+		return
+	}
+	folders := make([]map[string]string, 0)
+	for _, entry := range entries {
+		if !entry.IsDir {
+			continue
+		}
+		child := entry.Name
+		if dir != "" {
+			child = path.Join(dir, entry.Name)
+		}
+		folders = append(folders, map[string]string{"name": entry.Name, "path": child})
+	}
+	writeJSON(w, map[string]any{"root": cfg.VirtualRoot, "path": dir, "folders": folders})
+}
+
+func (a *App) moveFolderCreatePost(w http.ResponseWriter, r *http.Request) {
+	if !a.parseProtectedForm(w, r) || !a.allowBulkAction(w, r, "folder") {
+		return
+	}
+	root := strings.Trim(strings.TrimSpace(r.FormValue("destination_root")), "/")
+	cfg, err := a.store.StorageVolumeByVirtualRoot(r.Context(), root)
+	if err != nil || cfg.ReadOnly || !a.storageOnline(r, cfg.ID) {
+		writeJSONError(w, errors.New("la unidad de destino no está disponible para escritura"), http.StatusConflict)
+		return
+	}
+	parent, err := safeVirtualSubdir(r.FormValue("parent"))
+	if err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(strings.ReplaceAll(r.FormValue("name"), "\\", "/"))
+	if name == "" || strings.Contains(name, "/") || name == "." || name == ".." || strings.ContainsRune(name, 0) {
+		writeJSONError(w, errors.New("nombre de carpeta inválido"), http.StatusBadRequest)
+		return
+	}
+	targetDir := name
+	if parent != "" {
+		targetDir = path.Join(parent, name)
+	}
+	virtual := path.Join("/", cfg.VirtualRoot, targetDir)
+	if err := a.vfs.MkdirAll(r.Context(), virtual); err != nil {
+		writeJSONError(w, fmt.Errorf("crear carpeta: %w", err), http.StatusConflict)
+		return
+	}
+	user := userFromContext(r.Context())
+	_ = a.store.Audit(r.Context(), user.ID, "folder_create", "destino:/"+cfg.VirtualRoot+"/"+targetDir, a.clientIP(r))
+	writeJSON(w, map[string]any{"ok": true, "path": targetDir})
+}

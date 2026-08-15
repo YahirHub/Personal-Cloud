@@ -95,6 +95,7 @@ type pageData struct {
 	Settings           store.AppSettings
 	SettingsSyncText   string
 	MoveDestinations   []moveDestination
+	IntegrityUnits     []integrityUnitView
 }
 
 type contextKey string
@@ -257,6 +258,11 @@ func (a *App) routes() {
 	a.mux.Handle("GET /configuracion", a.requireAuth(http.HandlerFunc(a.settingsGet)))
 	a.mux.Handle("POST /configuracion/sincronizacion", a.requireAuth(http.HandlerFunc(a.settingsSyncPost)))
 	a.mux.Handle("POST /configuracion/sincronizar", a.requireAuth(http.HandlerFunc(a.settingsSyncNowPost)))
+	a.mux.Handle("POST /configuracion/sincronizar/{id}", a.requireAuth(http.HandlerFunc(a.settingsSyncUnitPost)))
+	a.mux.Handle("POST /configuracion/verificar-integridad", a.requireAuth(http.HandlerFunc(a.settingsVerifyNowPost)))
+	a.mux.Handle("POST /configuracion/verificar-integridad/{id}", a.requireAuth(http.HandlerFunc(a.settingsVerifyUnitPost)))
+	a.mux.Handle("GET /api/carpetas", a.requireAuth(http.HandlerFunc(a.moveFoldersGet)))
+	a.mux.Handle("POST /api/carpetas/crear", a.requireAuth(http.HandlerFunc(a.moveFolderCreatePost)))
 	a.mux.Handle("POST /api/elementos/mover", a.requireAuth(http.HandlerFunc(a.elementsMovePost)))
 	a.mux.Handle("POST /api/elementos/eliminar", a.requireAuth(http.HandlerFunc(a.elementsDeletePost)))
 	a.mux.Handle("POST /api/elementos/descargar", a.requireAuth(http.HandlerFunc(a.batchDownloadTicketPost)))

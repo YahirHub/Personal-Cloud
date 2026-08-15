@@ -369,7 +369,35 @@ func TestTemplatesExposeBulkSelectionAndSettings(t *testing.T) {
 	if err := renderer.Render(&out, "settings", settings); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "Sincronizar ahora") || !strings.Contains(out.String(), "Cada 30 min") {
+	if !strings.Contains(out.String(), "Sincronizar todo") || !strings.Contains(out.String(), "Verificar integridad") || !strings.Contains(out.String(), "Cada 30 min") {
 		t.Fatal("configuración de sincronización incompleta")
+	}
+}
+
+func TestSettingsExposeIntegrityAndFolderPicker(t *testing.T) {
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := store.User{Username: "admin", Role: "admin"}
+	data := pageData{Title: "Configuración", CurrentPath: "/configuracion", User: &user, CSRFToken: "csrf", IntegrityUnits: []integrityUnitView{{ID: "v1", Name: "USB", VirtualRoot: "USB", Online: true, Damaged: 2, DamagedPending: 2, Unchecked: 1, Healthy: 4, Samples: []catalog.File{{Name: "roto.mp4", Health: "damaged", HealthError: "archivo truncado"}}}}}
+	var out bytes.Buffer
+	if err := renderer.Render(&out, "settings", data); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Verificar integridad", "2 dañados", "roto.mp4", "Eliminar dañados", "/configuracion/sincronizar/v1"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("configuración sin %q", want)
+		}
+	}
+	out.Reset()
+	gallery := pageData{Title: "Galería", CurrentPath: "/galeria", User: &user, CSRFToken: "csrf", ListingMode: "infinito", MoveDestinations: []moveDestination{{Name: "USB", VirtualRoot: "USB", Online: true}}}
+	if err := renderer.Render(&out, "photos", gallery); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"data-folder-picker", "data-create-folder", "data-move-root", "data-select-icon=\"video\""} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("UI cloud sin %q", want)
+		}
 	}
 }

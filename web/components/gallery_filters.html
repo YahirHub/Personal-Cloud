@@ -4,21 +4,29 @@
     <div class="dialog-head"><div><div class="eyebrow">Galería</div><h2>Filtrar y ordenar</h2></div><button class="icon-button" type="button" data-close-gallery-filter aria-label="Cerrar">{{template "icon-close" .}}</button></div>
     <input type="hidden" name="modo" value="{{.ListingMode}}">
     <label>Tipo
-      <span class="select-with-icon"><span class="select-leading" aria-hidden="true">◫</span><select name="tipo" data-icon-select>
-        <option value="all" data-icon="◫" {{if eq .GalleryType "all"}}selected{{end}}>◫ Todo</option>
-        <option value="image" data-icon="▧" {{if eq .GalleryType "image"}}selected{{end}}>▧ Solo imágenes</option>
-        <option value="video" data-icon="▶" {{if eq .GalleryType "video"}}selected{{end}}>▶ Solo videos</option>
-        <option value="audio" data-icon="♪" {{if eq .GalleryType "audio"}}selected{{end}}>♪ Solo música / audio</option>
-      </select></span>
+      <span class="select-with-icon">
+        <span class="select-leading select-leading-stack" aria-hidden="true" data-select-leading>
+          <span data-select-icon="all" {{if ne .GalleryType "all"}}hidden{{end}}>{{template "icon-gallery" .}}</span>
+          <span data-select-icon="image" {{if ne .GalleryType "image"}}hidden{{end}}>{{template "icon-image" .}}</span>
+          <span data-select-icon="video" {{if ne .GalleryType "video"}}hidden{{end}}>{{template "icon-video" .}}</span>
+          <span data-select-icon="audio" {{if ne .GalleryType "audio"}}hidden{{end}}>{{template "icon-audio" .}}</span>
+        </span>
+        <select name="tipo" data-icon-select>
+          <option value="all" {{if eq .GalleryType "all"}}selected{{end}}>Todo el contenido</option>
+          <option value="image" {{if eq .GalleryType "image"}}selected{{end}}>Solo imágenes</option>
+          <option value="video" {{if eq .GalleryType "video"}}selected{{end}}>Solo videos</option>
+          <option value="audio" {{if eq .GalleryType "audio"}}selected{{end}}>Solo música / audio</option>
+        </select>
+      </span>
     </label>
     <label>Orden
-      <span class="select-with-icon"><span class="select-leading" aria-hidden="true">⇅</span><select name="orden" data-icon-select>
-        <option value="file-newest" data-icon="↓" {{if eq .GallerySort "file-newest"}}selected{{end}}>↓ Fecha del archivo · reciente primero</option>
-        <option value="file-oldest" data-icon="↑" {{if eq .GallerySort "file-oldest"}}selected{{end}}>↑ Fecha del archivo · antiguo primero</option>
-        <option value="added-newest" data-icon="＋" {{if eq .GallerySort "added-newest"}}selected{{end}}>＋ Añadidos recientemente</option>
-        <option value="added-oldest" data-icon="−" {{if eq .GallerySort "added-oldest"}}selected{{end}}>− Añadidos más antiguos</option>
-        <option value="name-az" data-icon="A" {{if eq .GallerySort "name-az"}}selected{{end}}>A Nombre A → Z</option>
-        <option value="name-za" data-icon="Z" {{if eq .GallerySort "name-za"}}selected{{end}}>Z Nombre Z → A</option>
+      <span class="select-with-icon"><span class="select-leading" aria-hidden="true">{{template "icon-sort" .}}</span><select name="orden">
+        <option value="file-newest" {{if eq .GallerySort "file-newest"}}selected{{end}}>Fecha del archivo · reciente primero</option>
+        <option value="file-oldest" {{if eq .GallerySort "file-oldest"}}selected{{end}}>Fecha del archivo · antiguo primero</option>
+        <option value="added-newest" {{if eq .GallerySort "added-newest"}}selected{{end}}>Añadidos recientemente</option>
+        <option value="added-oldest" {{if eq .GallerySort "added-oldest"}}selected{{end}}>Añadidos más antiguos</option>
+        <option value="name-az" {{if eq .GallerySort "name-az"}}selected{{end}}>Nombre A → Z</option>
+        <option value="name-za" {{if eq .GallerySort "name-za"}}selected{{end}}>Nombre Z → A</option>
       </select></span>
     </label>
     <div class="button-row"><a class="button button-secondary" href="/galeria?modo={{.ListingMode}}">Restablecer</a><button class="button button-primary" type="submit">Aplicar</button></div>

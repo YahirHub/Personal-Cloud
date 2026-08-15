@@ -25,6 +25,12 @@ func NewRenderer() (*Renderer, error) {
 		"categoryLabel":  categoryLabel,
 		"statusClass":    statusClass,
 		"percent":        percent,
+		"sub": func(a, b int) int {
+			if a < b {
+				return 0
+			}
+			return a - b
+		},
 	}
 	base, err := template.New("base").Funcs(funcs).ParseFS(webassets.Assets, "layouts/*.html", "components/*.html")
 	if err != nil {

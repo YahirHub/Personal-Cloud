@@ -68,6 +68,7 @@ type renderData struct {
 		LastSyncAt          time.Time
 	}
 	SettingsSyncText string
+	IntegrityUnits   []any
 }
 
 func TestRenderPages(t *testing.T) {

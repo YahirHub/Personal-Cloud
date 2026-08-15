@@ -1,14 +1,44 @@
 {{define "content"}}
-<section class="page">
-  <header class="page-header"><div><div class="eyebrow">Servidor</div><h1>Configuración</h1><p class="muted">Controla la reconciliación del catálogo con los cambios reales de tus unidades.</p></div></header>
+<section class="page" data-settings-page>
+  <header class="page-header page-header-actions">
+    <div><div class="eyebrow">Servidor</div><h1>Configuración</h1><p class="muted">Sincroniza cambios hechos fuera del panel y revisa la integridad multimedia sin reconstruir el catálogo a ciegas.</p></div>
+    <div class="header-tools">
+      <form method="post" action="/configuracion/sincronizar"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><button class="button button-secondary" type="submit">{{template "icon-sync" .}} Sincronizar todo</button></form>
+      <form method="post" action="/configuracion/verificar-integridad"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><button class="button button-primary" type="submit">{{template "icon-shield-check" .}} Verificar integridad</button></form>
+    </div>
+  </header>
   {{if .Info}}<div class="alert alert-success">{{.Info}}</div>{{end}}{{if .Error}}<div class="alert alert-error">{{.Error}}</div>{{end}}
+
   <div class="settings-grid">
-    <article class="panel-card"><div class="eyebrow">Sincronización</div><h2>Escaneo del catálogo</h2><p class="muted">Una sincronización detecta archivos agregados, eliminados o modificados fuera del panel. La sincronización periódica puede despertar discos externos, por eso está desactivada por defecto.</p>
+    <article class="panel-card"><div class="eyebrow">Sincronización automática</div><h2>Reconciliación del catálogo</h2><p class="muted">Detecta archivos agregados, modificados o eliminados desde Explorer, terminal, WebDAV u otra aplicación. Puede despertar discos externos, por eso inicia desactivada.</p>
       <form class="form-grid" method="post" action="/configuracion/sincronizacion"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><label>Intervalo en minutos<input type="number" name="sync_interval_minutes" value="{{.Settings.SyncIntervalMinutes}}" min="0" max="10080" step="5"><small>0 = desactivado · mínimo 5 min · máximo 7 días</small></label><button class="button button-primary" type="submit">Guardar intervalo</button></form>
       <div class="settings-status"><strong>{{.SettingsSyncText}}</strong><small>Última sincronización solicitada: {{formatTime .Settings.LastSyncAt}}</small></div>
-      <form method="post" action="/configuracion/sincronizar"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><button class="button button-secondary" type="submit">{{template "icon-sync" .}} Sincronizar ahora</button></form>
     </article>
-    <article class="panel-card"><div class="eyebrow">Cómo funciona</div><h2>Reconciliación segura</h2><ul class="feature-list"><li>Archivos nuevos → se agregan al catálogo.</li><li>Archivos modificados → se actualizan y regeneran caches.</li><li>Archivos eliminados externamente → se retiran del catálogo.</li><li>Medios dañados → se marcan y se ofrece eliminarlos.</li></ul></article>
+    <article class="panel-card"><div class="eyebrow">Comportamiento</div><h2>Qué corrige una sincronización</h2><ul class="feature-list"><li>Archivos nuevos → se agregan.</li><li>Archivos modificados → se actualizan y regeneran cachés.</li><li>Archivos eliminados externamente → se retiran.</li><li>Operaciones hechas dentro de Personal Cloud → actualizan el catálogo directamente, sin reescaneo global.</li><li>“Verificar integridad” vuelve a comprobar multimedia aunque no haya cambiado tamaño/fecha.</li></ul></article>
   </div>
+
+  <section class="settings-section">
+    <div class="section-heading"><div><div class="eyebrow">Integridad y sincronización por unidad</div><h2>Estado del catálogo</h2></div><p class="muted">Los dañados nunca se eliminan automáticamente.</p></div>
+    {{if .IntegrityUnits}}
+    <div class="integrity-grid">
+      {{range .IntegrityUnits}}
+      <article class="integrity-card{{if not .Online}} is-offline{{end}}" data-settings-index-card="{{.ID}}" data-job-state="{{.Job.State}}">
+        <div class="integrity-head"><div><h3>{{.Name}}</h3><small>/{{.VirtualRoot}} · {{if .Online}}conectada{{else}}no disponible{{end}}</small></div><div class="health-counts"><span class="health-ok">{{.Healthy}} sanos</span><span class="health-warning">{{.Unchecked}} sin verificar</span><span class="health-danger">{{.Damaged}} dañados</span></div></div>
+        <div class="index-progress" data-settings-index-progress>
+          <div class="progress-copy"><strong data-settings-index-label>{{if eq .Job.State "scanning"}}Procesando {{.Job.Scanned}} / {{.Job.Total}}{{else if eq .Job.State "counting"}}Contando archivos…{{else if eq .Job.State "queued"}}En cola…{{else if eq .Job.State "done"}}Última sincronización completa{{else}}Sin trabajo en curso{{end}}</strong><span data-settings-index-percent>{{.JobPercent}}%</span></div>
+          <progress max="100" value="{{.JobPercent}}" data-settings-index-bar></progress>
+          <small data-settings-index-detail>{{if eq .Job.State "done"}}+{{.Job.Added}} nuevos · {{.Job.Changed}} modificados · {{.Job.Removed}} eliminados · {{.Job.Damaged}} dañados{{else if eq .Job.State "scanning"}}{{.Job.Images}} imágenes · {{.Job.Videos}} videos · {{.Job.Audio}} audios{{end}}</small>
+        </div>
+        {{if .Samples}}<div class="damaged-list"><strong>Elementos dañados detectados</strong>{{range .Samples}}<div class="damaged-list-item"><span>{{.Name}}</span><small>{{if .HealthError}}{{.HealthError}}{{else}}No se pudo decodificar correctamente{{end}}</small></div>{{end}}{{if gt .Damaged 5}}<small>Y {{sub .Damaged 5}} más…</small>{{end}}</div>{{end}}
+        <div class="button-row wrap">
+          <form method="post" action="/configuracion/sincronizar/{{.ID}}"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><button class="button button-secondary" type="submit" {{if not .Online}}disabled{{end}}>{{template "icon-sync" $}} Sincronizar</button></form>
+          <form method="post" action="/configuracion/verificar-integridad/{{.ID}}"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><button class="button button-secondary" type="submit" {{if not .Online}}disabled{{end}}>{{template "icon-shield-check" $}} Verificar</button></form>
+          {{if gt .DamagedPending 0}}<form method="post" action="/almacenamiento/{{.ID}}/danados/omitir"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="return_to" value="configuracion"><button class="button button-ghost" type="submit">Omitir aviso</button></form><form method="post" action="/almacenamiento/{{.ID}}/danados/eliminar" data-confirm-damaged><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="return_to" value="configuracion"><button class="button button-danger" type="submit">{{template "icon-trash" $}} Eliminar dañados</button></form>{{end}}
+        </div>
+      </article>
+      {{end}}
+    </div>
+    {{else}}<div class="empty-state compact-empty"><div class="empty-icon">∅</div><h2>No hay unidades registradas</h2><p>Registra almacenamiento para habilitar sincronización e integridad.</p></div>{{end}}
+  </section>
 </section>
 {{end}}

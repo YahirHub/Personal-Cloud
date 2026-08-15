@@ -57,3 +57,14 @@ func TestVerifyMediaQuickDetectsEmptyAndTruncatedImage(t *testing.T) {
 		t.Fatalf("JPEG truncado health=%q; se esperaba damaged", health)
 	}
 }
+
+func TestIntegritySamplePoints(t *testing.T) {
+	short := integritySamplePoints(3)
+	if len(short) != 1 || short[0] != 0 {
+		t.Fatalf("muestras cortas=%v", short)
+	}
+	long := integritySamplePoints(100)
+	if len(long) != 3 || long[0] != 0 || long[1] < 49 || long[1] > 51 || long[2] < 97 {
+		t.Fatalf("muestras largas=%v", long)
+	}
+}

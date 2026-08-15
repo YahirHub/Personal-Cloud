@@ -34,7 +34,12 @@ type JobStatus struct {
 	Videos    int       `json:"videos"`
 	Audio     int       `json:"audio"`
 	Damaged   int       `json:"damaged"`
+	Unchecked int       `json:"unchecked"`
+	Added     int       `json:"added"`
+	Changed   int       `json:"changed"`
+	Removed   int       `json:"removed"`
 	Updated   int       `json:"updated"`
+	VerifyAll bool      `json:"verify_all,omitempty"`
 	Error     string    `json:"error,omitempty"`
 	StartedAt time.Time `json:"started_at,omitempty"`
 	EndedAt   time.Time `json:"ended_at,omitempty"`
@@ -55,23 +60,24 @@ func (j JobStatus) Percent() int {
 }
 
 type Indexer struct {
-	catalog *Catalog
-	manager *storage.Manager
-	logger  *slog.Logger
-	queue   chan string
-	stop    chan struct{}
-	once    sync.Once
-	mu      sync.RWMutex
-	jobs    map[string]JobStatus
-	pending map[string]bool
-	ffmpeg  string
-	ffprobe string
+	catalog    *Catalog
+	manager    *storage.Manager
+	logger     *slog.Logger
+	queue      chan string
+	stop       chan struct{}
+	once       sync.Once
+	mu         sync.RWMutex
+	jobs       map[string]JobStatus
+	pending    map[string]bool
+	verifyNext map[string]bool
+	ffmpeg     string
+	ffprobe    string
 }
 
 func NewIndexer(catalog *Catalog, manager *storage.Manager, logger *slog.Logger) *Indexer {
 	ffmpeg, _ := exec.LookPath("ffmpeg")
 	ffprobe, _ := exec.LookPath("ffprobe")
-	i := &Indexer{catalog: catalog, manager: manager, logger: logger, queue: make(chan string, 16), stop: make(chan struct{}), jobs: make(map[string]JobStatus), pending: make(map[string]bool), ffmpeg: ffmpeg, ffprobe: ffprobe}
+	i := &Indexer{catalog: catalog, manager: manager, logger: logger, queue: make(chan string, 16), stop: make(chan struct{}), jobs: make(map[string]JobStatus), pending: make(map[string]bool), verifyNext: make(map[string]bool), ffmpeg: ffmpeg, ffprobe: ffprobe}
 	if ffmpeg != "" {
 		logger.Info("FFmpeg detectado; se generarán miniaturas de video cuando sea posible", "path", ffmpeg)
 	}
@@ -82,8 +88,18 @@ func NewIndexer(catalog *Catalog, manager *storage.Manager, logger *slog.Logger)
 func (i *Indexer) Close()                { i.once.Do(func() { close(i.stop) }) }
 func (i *Indexer) FFmpegAvailable() bool { return i.ffmpeg != "" }
 
-func (i *Indexer) Enqueue(storageID string) bool {
+func (i *Indexer) Enqueue(storageID string) bool { return i.enqueue(storageID, false) }
+
+// EnqueueVerify solicita una reconciliación completa que vuelve a validar la
+// integridad multimedia aunque tamaño y mtime no hayan cambiado. Se usa solo
+// desde acciones explícitas de mantenimiento para no castigar los discos.
+func (i *Indexer) EnqueueVerify(storageID string) bool { return i.enqueue(storageID, true) }
+
+func (i *Indexer) enqueue(storageID string, verifyAll bool) bool {
 	i.mu.Lock()
+	if verifyAll {
+		i.verifyNext[storageID] = true
+	}
 	if job, ok := i.jobs[storageID]; ok {
 		if job.State == "scanning" || job.State == "counting" {
 			i.pending[storageID] = true
@@ -95,7 +111,7 @@ func (i *Indexer) Enqueue(storageID string) bool {
 			return false
 		}
 	}
-	i.jobs[storageID] = JobStatus{StorageID: storageID, State: "queued"}
+	i.jobs[storageID] = JobStatus{StorageID: storageID, State: "queued", VerifyAll: verifyAll}
 	i.mu.Unlock()
 	select {
 	case i.queue <- storageID:
@@ -128,13 +144,18 @@ func (i *Indexer) worker() {
 			return
 		case storageID := <-i.queue:
 			for {
-				i.scan(storageID)
+				i.mu.Lock()
+				verifyAll := i.verifyNext[storageID]
+				delete(i.verifyNext, storageID)
+				i.mu.Unlock()
+				i.scan(storageID, verifyAll)
 				i.mu.Lock()
 				again := i.pending[storageID] && i.jobs[storageID].State == "done"
 				delete(i.pending, storageID)
 				if again {
 					job := i.jobs[storageID]
 					job.State = "queued"
+					job.VerifyAll = i.verifyNext[storageID]
 					i.jobs[storageID] = job
 				}
 				i.mu.Unlock()
@@ -146,11 +167,11 @@ func (i *Indexer) worker() {
 	}
 }
 
-func (i *Indexer) scan(storageID string) {
+func (i *Indexer) scan(storageID string, verifyAll bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	i.setJob(storageID, func(job *JobStatus) {
-		*job = JobStatus{StorageID: storageID, State: "counting", StartedAt: time.Now().UTC()}
+		*job = JobStatus{StorageID: storageID, State: "counting", VerifyAll: verifyAll, StartedAt: time.Now().UTC()}
 	})
 	lease, err := i.manager.Acquire(ctx, storageID, false)
 	if err != nil {
@@ -220,14 +241,24 @@ func (i *Indexer) scan(storageID string) {
 		}
 		file := File{ID: id, StorageID: storageID, VirtualRoot: lease.Volume.VirtualRoot, RelativePath: filepath.ToSlash(rel), Name: info.Name(), Kind: kind, MIME: mimeType, Size: info.Size(), ModTime: info.ModTime().UTC()}
 		unchanged := existed && old.Size == info.Size() && old.ModTime.Equal(info.ModTime().UTC()) && old.Kind == kind
-		if unchanged && old.Health != "" {
+		if !existed {
+			i.setJob(storageID, func(job *JobStatus) { job.Added++ })
+		} else if !unchanged {
+			i.setJob(storageID, func(job *JobStatus) { job.Changed++ })
+		}
+		if unchanged && old.Health != "" && !verifyAll {
 			file.Health, file.HealthError, file.HealthCheckedAt, file.DamageIgnored = old.Health, old.HealthError, old.HealthCheckedAt, old.DamageIgnored
 		} else if kind == "image" || kind == "video" || kind == "audio" {
 			file.Health, file.HealthError = i.verifyMediaQuick(ctx, source, kind, info.Size())
 			file.HealthCheckedAt = time.Now().UTC()
+			if file.Health != old.Health || file.HealthError != old.HealthError {
+				file.DamageIgnored = false
+			}
 		}
 		if file.Health == "damaged" && !file.DamageIgnored {
 			i.setJob(storageID, func(job *JobStatus) { job.Damaged++ })
+		} else if file.Health == "unchecked" {
+			i.setJob(storageID, func(job *JobStatus) { job.Unchecked++ })
 		}
 		switch kind {
 		case "image":
@@ -272,6 +303,7 @@ func (i *Indexer) scan(storageID string) {
 		i.failJob(storageID, err)
 		return
 	}
+	i.setJob(storageID, func(job *JobStatus) { job.Removed = len(deleted) })
 	if i.catalog.ShouldCompact() {
 		if err := i.catalog.Compact(ctx); err != nil {
 			i.logger.Warn("no se pudo compactar catálogo", "error", err)

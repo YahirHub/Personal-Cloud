@@ -229,7 +229,7 @@ El indexador:
 9. libera el lease;
 10. permite que el idle timeout desmonte la unidad.
 
-Solo existe un worker de indexación para no despertar o cargar varios HDD al mismo tiempo. Las imágenes que el decoder nativo puede manejar se decodifican para comprobar que no estén truncadas; video/audio usan `ffprobe` si está disponible. Si no existe una forma segura de comprobar un formato, se marca internamente como `unchecked` y **no** se presenta como dañado. La comprobación es de integridad operativa rápida, no un análisis forense de bit-rot de cada frame.
+Solo existe un worker de indexación para no despertar o cargar varios HDD al mismo tiempo. Las imágenes que el decoder nativo puede manejar se decodifican para comprobar que no estén truncadas. Para video/audio, `ffprobe` valida primero la estructura y, cuando FFmpeg está disponible, se decodifican muestras del inicio, centro y final con `-xerror`; así se detectan truncamientos/corrupción común sin decodificar horas completas durante cada sincronización. Si no existe una forma segura de comprobar un formato, se marca internamente como `unchecked` y **no** se presenta como dañado. Desde Configuración se puede ejecutar **Verificar integridad**, que fuerza una nueva comprobación incluso de archivos cuyo tamaño/fecha no hayan cambiado.
 
 Cuando una indexación termina con medios ilegibles, `/almacenamiento` muestra el total encontrado y ofrece **Omitir** o **Eliminar dañados**. Omitir conserva los originales y silencia ese aviso mientras el archivo no cambie; eliminar retira el archivo físico y su caché/catalogación.
 
@@ -261,10 +261,16 @@ Si navegas dentro de una raíz virtual, la subida se dirige explícitamente a es
 Galería y Archivos comparten un modo de selección activado desde el botón de tres puntos. En ese modo aparecen casillas y cada tarjeta/fila seleccionada reduce ligeramente su escala y muestra un resaltado visual. Se pueden seleccionar hasta 500 archivos por operación y ejecutar:
 
 - **Descargar ZIP**: crea el ZIP directamente sobre la respuesta HTTP, un archivo a la vez, con un buffer de 64 KiB. Fotos, video, audio, PDF y archivos ya comprimidos usan `Store` para no gastar CPU inútilmente; texto y formatos compresibles usan Deflate `BestSpeed`. No crea un ZIP temporal gigante ni carga todos los archivos en RAM. Solo se permite un ZIP masivo simultáneo para proteger hardware modesto. Los archivos que desaparezcan o cuya unidad se desconecte durante el proceso se anotan dentro de `PERSONAL-CLOUD-ERRORES.txt` sin tumbar todo el servidor.
-- **Mover**: permite elegir otra unidad y una carpeta anidada; si la carpeta no existe se crea. En la misma unidad usa rename; entre unidades copia por streaming a un temporal, hace `Sync`, confirma el destino y solo después elimina el origen. El catálogo y las caches se actualizan directamente, sin reindexar toda la unidad.
+- **Mover**: permite elegir otra unidad, navegar sus carpetas y crear explícitamente una carpeta nueva desde el propio diálogo; también admite escribir una ruta relativa. Si la carpeta no existe se crea. En la misma unidad usa rename; entre unidades copia por streaming a un temporal, hace `Sync`, confirma el destino y solo después elimina el origen. El catálogo y las caches se actualizan directamente, sin reindexar toda la unidad.
 - **Eliminar**: pide confirmación, elimina los originales/caches y retira las entradas del catálogo.
 
 El mismo menú de Descargar/Mover/Eliminar aparece con clic derecho en escritorio y con pulsación larga en dispositivos táctiles/Android. Todas las mutaciones usan sesión autenticada, CSRF, límites de operación y validación del VFS; las descargas masivas remotas requieren HTTPS y usan un ticket aleatorio opaco, de un solo uso y ligado al usuario.
+
+### Configuración, sincronización e integridad
+
+`/configuracion` muestra un resumen por unidad con archivos sanos, no verificados y dañados, ejemplos del error detectado y acciones **Omitir aviso** / **Eliminar dañados**. Desde ahí se puede sincronizar todo, sincronizar una sola unidad o forzar **Verificar integridad**.
+
+Cada sincronización informa cuántos archivos fueron agregados, modificados y retirados del catálogo. Los movimientos/eliminaciones realizados dentro del panel actualizan el catálogo directamente; el escaneo se reserva para reconciliar cambios externos o comprobar integridad. La periodicidad global es configurable entre 5 minutos y 7 días, o `0` para mantenerla desactivada.
 
 ### Galería, visor y formatos multimedia
 

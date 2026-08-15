@@ -294,6 +294,36 @@ func (c *Catalog) AllFiles() []File {
 	return result
 }
 
+type HealthCounts struct {
+	Damaged        int
+	DamagedPending int
+	Unchecked      int
+	OK             int
+}
+
+func (c *Catalog) HealthCountsByStorage(storageID string) HealthCounts {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	var counts HealthCounts
+	for _, file := range c.files {
+		if file.StorageID != storageID || (file.Kind != "image" && file.Kind != "video" && file.Kind != "audio") {
+			continue
+		}
+		switch file.Health {
+		case "damaged":
+			counts.Damaged++
+			if !file.DamageIgnored {
+				counts.DamagedPending++
+			}
+		case "unchecked", "":
+			counts.Unchecked++
+		case "ok":
+			counts.OK++
+		}
+	}
+	return counts
+}
+
 func (c *Catalog) DamagedByStorage(storageID string, includeIgnored bool) []File {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
