@@ -319,17 +319,20 @@
     if (viewerShell) viewerShell.dataset.activeKind = '';
   });
   viewer?.addEventListener('click', (event) => { if (event.target === viewer) viewer.close(); });
-  document.addEventListener('keydown', (event) => {
-    if (!viewer?.open) return;
+  const handleViewerKeydown = (event) => {
+    if (!viewer?.open || event.ctrlKey || event.metaKey || event.altKey) return;
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
     const key = event.key.toLowerCase();
-    if (key === 'arrowleft' || key === 'a') { event.preventDefault(); stepMedia(-1); }
-    else if (key === 'arrowright' || key === 'd') { event.preventDefault(); stepMedia(1); }
-    else if (key === 'w') { event.preventDefault(); setZoom(zoom + .15); }
-    else if (key === 's') { event.preventDefault(); setZoom(zoom - .15); }
-    else if (key === 'escape') viewer.close();
-  });
+    if (key === 'arrowleft' || key === 'a') { event.preventDefault(); event.stopPropagation(); stepMedia(-1); }
+    else if (key === 'arrowright' || key === 'd') { event.preventDefault(); event.stopPropagation(); stepMedia(1); }
+    else if (key === 'w') { event.preventDefault(); event.stopPropagation(); setZoom(zoom + .15); }
+    else if (key === 's') { event.preventDefault(); event.stopPropagation(); setZoom(zoom - .15); }
+    else if (key === 'escape') { event.preventDefault(); viewer.close(); }
+  };
+  // Los controles nativos de <video>/<audio> pueden consumir keydown en su shadow UI.
+  // Capturar en window mantiene los atajos del visor incluso después de usar seek o volumen.
+  window.addEventListener('keydown', handleViewerKeydown, true);
 
   // Oculta inmediatamente medios cuya unidad se desconectó; una reconexión refresca el catálogo visible.
   const refreshGalleryAvailability = async () => {

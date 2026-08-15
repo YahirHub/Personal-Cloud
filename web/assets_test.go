@@ -52,3 +52,19 @@ func TestViewerMetadataStaysAwayFromNativeMediaControls(t *testing.T) {
 		t.Fatal("no debe quedar el antiguo footer sobre los controles nativos de video")
 	}
 }
+
+func TestViewerKeyboardShortcutsUseCapturePhase(t *testing.T) {
+	data, err := fs.ReadFile(Assets, "static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	js := string(data)
+	if !strings.Contains(js, "window.addEventListener('keydown', handleViewerKeydown, true)") {
+		t.Fatal("los atajos del visor deben registrarse en fase de captura para sobrevivir al foco de controles nativos de video")
+	}
+	for _, shortcut := range []string{"arrowleft", "arrowright", "'a'", "'d'", "'w'", "'s'"} {
+		if !strings.Contains(js, shortcut) {
+			t.Fatalf("falta conservar el atajo %s del visor", shortcut)
+		}
+	}
+}
