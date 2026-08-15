@@ -8,7 +8,7 @@
   {{if .Media}}
   <div class="photo-grid" data-gallery-grid data-mode="{{.ListingMode}}" data-next="{{.MediaNext}}" data-has-more="{{.MediaHasMore}}">
     {{range .Media}}
-    <button class="photo-card media-card" type="button" data-media-id="{{.ID}}" data-download-file-id="{{.ID}}" data-storage-id="{{.StorageID}}" data-kind="{{.Kind}}" data-name="{{.Name}}" data-original="{{.OriginalURL}}" data-preview="{{.PreviewURL}}" data-thumbnail="{{.ThumbnailURL}}" title="Abrir {{.Name}}">
+    <button class="photo-card media-card" type="button" data-media-id="{{.ID}}" data-download-file-id="{{.ID}}" data-storage-id="{{.StorageID}}" data-kind="{{.Kind}}" data-name="{{.Name}}" data-original="{{.OriginalURL}}" data-preview="{{.PreviewURL}}" data-thumbnail="{{.ThumbnailURL}}" data-cache-version="{{.CacheVersion}}" title="Abrir {{.Name}}">
       {{if .ThumbnailURL}}<img src="{{.ThumbnailURL}}" loading="lazy" alt="">{{else}}<div class="photo-placeholder">{{if eq .Kind "video"}}▶{{else if eq .Kind "audio"}}♪{{else}}▧{{end}}</div>{{end}}
       {{if eq .Kind "video"}}<span class="media-badge">Video</span>{{else if eq .Kind "audio"}}<span class="media-badge">Audio</span>{{end}}
       <div class="photo-meta"><strong>{{.Name}}</strong><small>{{formatTime .ModTime}} · {{formatBytes .Size}}</small></div>
@@ -28,6 +28,10 @@
     <div class="viewer-stage" data-viewer-stage></div>
     <button class="viewer-close icon-button" type="button" data-viewer-close aria-label="Cerrar">{{template "icon-close" .}}</button>
     <button class="viewer-fullscreen icon-button" type="button" data-viewer-fullscreen aria-label="Pantalla completa" title="Pantalla completa" hidden>{{template "icon-fullscreen" .}}</button>
+    <div class="viewer-quality" data-video-quality-control hidden>
+      <label><span>Calidad</span><select data-video-quality><option value="original">Original</option></select></label>
+      <small data-video-quality-status></small>
+    </div>
     <button class="viewer-nav viewer-prev icon-button" type="button" data-viewer-prev aria-label="Anterior">{{template "icon-prev" .}}</button>
     <button class="viewer-nav viewer-next icon-button" type="button" data-viewer-next aria-label="Siguiente">{{template "icon-next" .}}</button>
     <div class="viewer-meta" data-viewer-meta><div><strong data-viewer-title></strong><small data-viewer-help>←/→ o A/D: cambiar · W/S: zoom · clic derecho: descargar · Esc: cerrar</small></div></div>

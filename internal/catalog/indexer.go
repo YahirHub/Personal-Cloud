@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -22,6 +23,7 @@ import (
 )
 
 const maxThumbnailSourcePixels int64 = 80_000_000
+const ImageCacheVersion = 2
 
 type JobStatus struct {
 	StorageID string    `json:"storage_id"`
@@ -62,11 +64,13 @@ type Indexer struct {
 	jobs    map[string]JobStatus
 	pending map[string]bool
 	ffmpeg  string
+	ffprobe string
 }
 
 func NewIndexer(catalog *Catalog, manager *storage.Manager, logger *slog.Logger) *Indexer {
 	ffmpeg, _ := exec.LookPath("ffmpeg")
-	i := &Indexer{catalog: catalog, manager: manager, logger: logger, queue: make(chan string, 16), stop: make(chan struct{}), jobs: make(map[string]JobStatus), pending: make(map[string]bool), ffmpeg: ffmpeg}
+	ffprobe, _ := exec.LookPath("ffprobe")
+	i := &Indexer{catalog: catalog, manager: manager, logger: logger, queue: make(chan string, 16), stop: make(chan struct{}), jobs: make(map[string]JobStatus), pending: make(map[string]bool), ffmpeg: ffmpeg, ffprobe: ffprobe}
 	if ffmpeg != "" {
 		logger.Info("FFmpeg detectado; se generarán miniaturas de video cuando sea posible", "path", ffmpeg)
 	}
@@ -218,9 +222,16 @@ func (i *Indexer) scan(storageID string) {
 		switch kind {
 		case "image":
 			i.setJob(storageID, func(job *JobStatus) { job.Images++ })
-			file.Width, file.Height, file.Thumbnail, file.Preview = i.ensureImageCache(source, id, unchanged)
+			cacheCurrent := unchanged && old.CacheVersion == ImageCacheVersion
+			file.CacheVersion = ImageCacheVersion
+			file.Width, file.Height, file.Thumbnail, file.Preview = i.ensureImageCache(source, id, cacheCurrent)
 		case "video":
 			i.setJob(storageID, func(job *JobStatus) { job.Videos++ })
+			if unchanged && old.Width > 0 && old.Height > 0 {
+				file.Width, file.Height = old.Width, old.Height
+			} else {
+				file.Width, file.Height = i.probeVideoDimensions(ctx, source)
+			}
 			file.Thumbnail = i.ensureFFmpegThumbnail(ctx, source, id, unchanged, false)
 		case "audio":
 			i.setJob(storageID, func(job *JobStatus) { job.Audio++ })
@@ -366,6 +377,7 @@ func (i *Indexer) ensureImageCache(source, id string, unchanged bool) (int, int,
 		_ = os.Remove(thumbPath)
 		_ = os.Remove(previewPath)
 	}
+	orientation := imageOrientation(source)
 	file, err := os.Open(source)
 	if err != nil {
 		return 0, 0, false, false
@@ -375,18 +387,20 @@ func (i *Indexer) ensureImageCache(source, id string, unchanged bool) (int, int,
 	if err != nil || config.Width <= 0 || config.Height <= 0 {
 		return i.ensureFFmpegImageCache(source, id, unchanged)
 	}
+	displayWidth, displayHeight := orientedDimensions(config.Width, config.Height, orientation)
 	if int64(config.Width) > maxThumbnailSourcePixels/int64(config.Height) {
-		return config.Width, config.Height, false, false
+		return displayWidth, displayHeight, false, false
 	}
 	file, err = os.Open(source)
 	if err != nil {
-		return config.Width, config.Height, false, false
+		return displayWidth, displayHeight, false, false
 	}
 	img, _, err := image.Decode(file)
 	_ = file.Close()
 	if err != nil {
-		return config.Width, config.Height, false, false
+		return displayWidth, displayHeight, false, false
 	}
+	img = orientImage(img, orientation)
 	b := img.Bounds()
 	w, h := b.Dx(), b.Dy()
 	return w, h, writeScaledJPEG(img, thumbPath, 320, 82) == nil, writeScaledJPEG(img, previewPath, 1600, 88) == nil
@@ -452,6 +466,55 @@ func fileExistsNonEmpty(path string) bool {
 	return err == nil && info.Size() > 0
 }
 
+func (i *Indexer) probeVideoDimensions(ctx context.Context, source string) (int, int) {
+	if i.ffprobe == "" {
+		return 0, 0
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(probeCtx, i.ffprobe,
+		"-v", "error", "-select_streams", "v:0",
+		"-show_entries", "stream=width,height:stream_tags=rotate:stream_side_data=rotation",
+		"-of", "json", source,
+	).Output()
+	if err != nil {
+		return 0, 0
+	}
+	var result struct {
+		Streams []struct {
+			Width  int `json:"width"`
+			Height int `json:"height"`
+			Tags   struct {
+				Rotate string `json:"rotate"`
+			} `json:"tags"`
+			SideData []struct {
+				Rotation int `json:"rotation"`
+			} `json:"side_data_list"`
+		} `json:"streams"`
+	}
+	if json.Unmarshal(output, &result) != nil || len(result.Streams) == 0 {
+		return 0, 0
+	}
+	stream := result.Streams[0]
+	rotation := 0
+	if stream.Tags.Rotate == "90" || stream.Tags.Rotate == "-270" {
+		rotation = 90
+	} else if stream.Tags.Rotate == "270" || stream.Tags.Rotate == "-90" {
+		rotation = 270
+	}
+	for _, side := range stream.SideData {
+		if side.Rotation == 90 || side.Rotation == -270 {
+			rotation = 90
+		} else if side.Rotation == 270 || side.Rotation == -90 {
+			rotation = 270
+		}
+	}
+	if rotation == 90 || rotation == 270 {
+		return stream.Height, stream.Width
+	}
+	return stream.Width, stream.Height
+}
+
 func imageDimensions(source string) (int, int) {
 	file, err := os.Open(source)
 	if err != nil {
@@ -462,7 +525,7 @@ func imageDimensions(source string) (int, int) {
 	if err != nil {
 		return 0, 0
 	}
-	return c.Width, c.Height
+	return orientedDimensions(c.Width, c.Height, imageOrientation(source))
 }
 func writeScaledJPEG(src image.Image, destination string, maxDimension, quality int) error {
 	b := src.Bounds()

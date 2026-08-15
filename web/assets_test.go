@@ -68,3 +68,34 @@ func TestViewerKeyboardShortcutsUseCapturePhase(t *testing.T) {
 		}
 	}
 }
+
+func TestViewerPredecodesImagesBeforeSwap(t *testing.T) {
+	data, err := fs.ReadFile(Assets, "static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	js := string(data)
+	for _, expected := range []string{
+		"const decodeViewerImage = async",
+		"typeof image.decode === 'function'",
+		"Number(card.dataset.cacheVersion || 0) >= 2",
+		"stage.replaceChildren(image)",
+	} {
+		if !strings.Contains(js, expected) {
+			t.Fatalf("el visor debe precargar y decodificar imágenes antes del swap; falta %q", expected)
+		}
+	}
+}
+
+func TestGalleryIncludesVideoQualitySelector(t *testing.T) {
+	data, err := fs.ReadFile(Assets, "pages/photos.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := string(data)
+	for _, expected := range []string{"data-video-quality-control", "data-video-quality", "data-video-quality-status"} {
+		if !strings.Contains(template, expected) {
+			t.Fatalf("el visor de video debe exponer selector de calidad; falta %q", expected)
+		}
+	}
+}

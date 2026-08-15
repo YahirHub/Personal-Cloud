@@ -32,6 +32,7 @@ type File struct {
 	Height       int       `json:"height,omitempty"`
 	Thumbnail    bool      `json:"thumbnail,omitempty"`
 	Preview      bool      `json:"preview,omitempty"`
+	CacheVersion int       `json:"cache_version,omitempty"`
 	IndexedAt    time.Time `json:"indexed_at"`
 }
 

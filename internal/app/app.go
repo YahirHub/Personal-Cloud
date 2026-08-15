@@ -20,6 +20,7 @@ import (
 	"personalcloud/internal/ratelimit"
 	storagepkg "personalcloud/internal/storage"
 	"personalcloud/internal/store"
+	"personalcloud/internal/streaming"
 	"personalcloud/internal/vfs"
 	webdavserver "personalcloud/internal/webdav"
 	"personalcloud/internal/webui"
@@ -38,6 +39,7 @@ type App struct {
 	catalog           *catalog.Catalog
 	indexer           *catalog.Indexer
 	vfs               *vfs.FS
+	streamer          *streaming.Manager
 	webdav            *webdavserver.Server
 	davAuthMu         sync.Mutex
 	davAuthSecret     [32]byte
@@ -98,6 +100,7 @@ var (
 	loginIPPolicy        = ratelimit.Policy{MaxAttempts: 12, Window: 15 * time.Minute}
 	loginUserPolicy      = ratelimit.Policy{MaxAttempts: 6, Window: 15 * time.Minute}
 	downloadTicketPolicy = ratelimit.Policy{MaxAttempts: 120, Window: time.Minute}
+	videoTranscodePolicy = ratelimit.Policy{MaxAttempts: 20, Window: time.Hour}
 )
 
 const (
@@ -122,6 +125,7 @@ func New(cfg config.Config, storage *store.Store, logger *slog.Logger) (*App, er
 	storageManager := storagepkg.NewManager(storage, logger, cfg.MountRoot)
 	virtualFS := vfs.New(storageManager, storage)
 	indexer := catalog.NewIndexer(catalogStore, storageManager, logger)
+	streamer := streaming.New(cfg.DataDir, virtualFS, logger)
 	dav := webdavserver.New(virtualFS, "/webdav", cfg.MaxUploadBytes)
 	dav.OnMutation = func(ctx context.Context, virtualPath string) {
 		storageID, err := virtualFS.StorageID(ctx, virtualPath)
@@ -150,6 +154,7 @@ func New(cfg config.Config, storage *store.Store, logger *slog.Logger) (*App, er
 		catalog:           catalogStore,
 		indexer:           indexer,
 		vfs:               virtualFS,
+		streamer:          streamer,
 		webdav:            dav,
 		davAuthSecret:     davAuthSecret,
 		downloadSecret:    downloadSecret,
@@ -183,6 +188,9 @@ func (a *App) Close() {
 		close(a.stop)
 		if a.indexer != nil {
 			a.indexer.Close()
+		}
+		if a.streamer != nil {
+			a.streamer.Close()
 		}
 		if a.storageManager != nil {
 			a.storageManager.Close()
@@ -224,6 +232,10 @@ func (a *App) routes() {
 		http.Redirect(w, r, "/galeria", http.StatusMovedPermanently)
 	})))
 	a.mux.Handle("GET /archivo/{id}/original", a.requireAuth(http.HandlerFunc(a.originalFileGet)))
+	a.mux.Handle("GET /api/video/{id}/calidades", a.requireAuth(http.HandlerFunc(a.videoQualitiesGet)))
+	a.mux.Handle("POST /api/video/{id}/preparar", a.requireAuth(http.HandlerFunc(a.videoVariantPreparePost)))
+	a.mux.Handle("GET /api/video/{id}/estado", a.requireAuth(http.HandlerFunc(a.videoVariantStatusGet)))
+	a.mux.Handle("GET /archivo/{id}/video/{quality}", a.requireAuth(http.HandlerFunc(a.videoVariantGet)))
 	a.mux.Handle("POST /api/descargas", a.requireAuth(http.HandlerFunc(a.downloadTicketPost)))
 	a.mux.Handle("GET /descarga/{token}", a.requireAuth(http.HandlerFunc(a.secureDownloadGet)))
 	a.mux.Handle("POST /almacenamiento/registrar", a.requireAuth(http.HandlerFunc(a.storageRegisterPost)))
@@ -246,6 +258,9 @@ func (a *App) housekeeping() {
 			return
 		case <-ticker.C:
 			a.limiter.Cleanup()
+			if a.streamer != nil {
+				a.streamer.Cleanup()
+			}
 			a.backupMetadataIfNeeded()
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			if err := a.store.DeleteExpiredSessions(ctx); err != nil {

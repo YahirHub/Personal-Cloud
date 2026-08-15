@@ -22,11 +22,12 @@ Implementado:
 - Auto-desmontaje por inactividad.
 - Catálogo persistente separado del estado de autenticación.
 - Indexación de archivos con una sola cola para minimizar actividad simultánea sobre HDD y progreso real procesados/total en tiempo real.
-- Miniaturas de hasta 320 px y previews de hasta 1600 px para JPEG/PNG/GIF; FFmpeg amplía formatos de imagen y genera portadas multimedia cuando está disponible.
+- Miniaturas de hasta 320 px y previews de hasta 1600 px para JPEG/PNG/GIF; se respeta EXIF Orientation y FFmpeg amplía formatos de imagen cuando está disponible.
 - Galería `/galeria` que usa la caché interna aunque el disco original esté desmontado y oculta medios de unidades físicamente desconectadas.
 - Filtro compacto por imágenes/video/audio y orden por fecha de archivo, fecha de incorporación o nombre.
 - Visor offline de imagen/video/audio centrado a viewport completo, con navegación ←/→ o A/D, zoom suave W/S y pantalla completa para video.
 - Preferencias locales persistentes del reproductor de video: mute, volumen y velocidad.
+- Calidad de video seleccionable Original/360p/480p/720p/1080p cuando FFmpeg + libx264 están disponibles; las variantes se generan bajo demanda y se cachean localmente.
 - Descarga por clic derecho mediante ticket AES-GCM opaco, ligado al usuario y de vida corta; las URLs no revelan ruta, storage ID ni nombre del archivo.
 - Scroll infinito por defecto o paginación persistente mediante un componente de listado reutilizable.
 - Apertura del original mediante montaje bajo demanda.
@@ -265,15 +266,18 @@ Controles del visor:
 - mute, volumen y velocidad de video se guardan en el navegador y se restauran al cambiar de video o recargar.
 - clic derecho sobre un medio permite solicitar una descarga segura mediante ticket opaco.
 
-JPEG, PNG y GIF generan miniatura/preview usando únicamente la biblioteca estándar. Para proteger el MiniPC frente a imágenes que disparen el uso de RAM, una fuente que el decoder nativo identifica con más de 80 megapíxeles se cataloga pero no se decodifica para thumbnail.
+JPEG, PNG y GIF generan miniatura/preview usando únicamente la biblioteca estándar. En JPEG se aplica `EXIF Orientation` antes de escribir la caché, de modo que preview y original tienen la misma orientación. La caché de imagen está versionada: al reindexar, previews anteriores se regeneran automáticamente. El visor además decodifica la siguiente imagen fuera del DOM y solo sustituye el medio visible cuando está lista, evitando el parpadeo de orientación al navegar. Para proteger el MiniPC frente a imágenes que disparen el uso de RAM, una fuente que el decoder nativo identifica con más de 80 megapíxeles se cataloga pero no se decodifica para thumbnail.
 
 FFmpeg es **opcional** y se detecta automáticamente en `PATH`. Cuando existe, Personal Cloud intenta usarlo para:
 
 - generar previews JPEG de imágenes que la biblioteca estándar no decodifica (por ejemplo WebP/HEIC/HEIF/AVIF/RAW si ese build de FFmpeg soporta el codec);
 - extraer un frame representativo de video;
-- extraer la carátula embebida de audio cuando exista.
+- extraer la carátula embebida de audio cuando exista;
+- preparar variantes MP4 360p/480p/720p/1080p bajo demanda si el ejecutable ofrece `libx264`.
 
-Sin FFmpeg el servidor sigue funcionando; únicamente faltarán esas miniaturas.
+El reproductor siempre comienza con el original. Al elegir otra calidad, el original continúa disponible mientras FFmpeg crea una única variante en segundo plano; al terminar, el navegador cambia de fuente conservando posición, mute, volumen y velocidad. Las variantes se guardan en `data/cache/video-variants/`, usan MP4 con `faststart`, se sirven mediante rangos HTTP y se eliminan por antigüedad (72 h). Solo se ejecuta una transcodificación a la vez para limitar CPU/RAM del MiniPC. Si `ffprobe` está disponible, se usa para conocer resolución/rotación y no ofrecer calidades mayores que la fuente.
+
+Sin FFmpeg el servidor sigue funcionando y reproduce el original normalmente; únicamente faltan las miniaturas/formats adicionales y el selector multiresolución. FFmpeg es un ejecutable externo opcional: no se enlaza con CGO ni forma parte del binario Go, que sigue compilando estáticamente.
 
 ### Listado reutilizable
 
