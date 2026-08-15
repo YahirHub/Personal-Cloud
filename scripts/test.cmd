@@ -10,7 +10,7 @@ if errorlevel 1 exit /b 1
 
 echo ==^> gofmt
 set "UNFORMATTED="
-for /f "delims=" %%F in ('gofmt -l ./cmd ./internal') do (
+for /f "delims=" %%F in ('gofmt -l ./cmd ./internal ./web') do (
     echo %%F
     set "UNFORMATTED=1"
 )

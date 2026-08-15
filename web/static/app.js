@@ -383,7 +383,7 @@
   let loadingFiles = false;
   const makeFileRow = (item) => {
     const anchor = document.createElement('a');
-    anchor.className = 'file-row';
+    anchor.className = `file-row${item.offline ? ' is-offline' : ''}`;
     anchor.setAttribute('role', 'listitem');
     anchor.href = item.is_dir ? item.url : item.download_url;
     if (!item.is_dir && item.id) {

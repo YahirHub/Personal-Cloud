@@ -253,14 +253,15 @@ Si navegas dentro de una raíz virtual, la subida se dirige explícitamente a es
 
 ### Galería, visor y formatos multimedia
 
-Abre `/galeria`. La ruta histórica `/fotos` redirige permanentemente a la Galería. Los assets del visor son locales/embebidos: no requiere CDN ni Internet.
+Abre `/galeria`. La ruta histórica `/fotos` redirige permanentemente a la Galería. Los assets del visor son locales/embebidos: no requiere CDN ni Internet. Una prueba automatizada recorre todos los HTML/CSS/JS embebidos y falla si aparece una referencia remota HTTP/HTTPS o un recurso protocol-relative.
 
 Controles del visor:
 
 - `←` / `→` o `A` / `D`: medio anterior/siguiente;
 - `W` / `S`: zoom suave de la imagen/video visible;
 - `Esc`: cerrar;
-- video y audio usan los controles HTML5 nativos; el visor añade un botón de pantalla completa para video.
+- video y audio usan los controles HTML5 nativos; el visor añade un botón de pantalla completa para video;
+- título y ayuda se muestran en una franja superior superpuesta, dejando siempre libre la zona inferior de controles nativos del video;
 - mute, volumen y velocidad de video se guardan en el navegador y se restauran al cambiar de video o recargar.
 - clic derecho sobre un medio permite solicitar una descarga segura mediante ticket opaco.
 
@@ -286,6 +287,8 @@ La preferencia se guarda en una cookie local del navegador y el componente se re
 ### Disponibilidad de unidades
 
 La Galería solo consulta medios cuyo `storage_id` pertenece a una unidad registrada y actualmente conectada. La comprobación de presencia usa GUID/UUID y evita consultar capacidad o recorrer contenido, para no despertar el disco únicamente por mantener abierta la Galería. Un volumen desmontado automáticamente por inactividad sigue considerándose disponible: sus miniaturas permanecen visibles y el VFS lo montará al abrir el original. Si el medio físico se desconecta, sus tarjetas desaparecen de la Galería sin borrar el catálogo. Al reconectarlo vuelve a aparecer sin perder metadata.
+
+En `/archivos`, las raíces y filas cuyo medio físico está desconectado permanecen navegables mediante el catálogo local, pero se muestran atenuadas/grises y con el estado **No disponible**. El estado también se aplica a filas añadidas después mediante scroll infinito.
 
 ### Descarga segura
 

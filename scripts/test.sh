@@ -9,7 +9,7 @@ echo '==> Go'
 go version
 
 echo '==> gofmt'
-unformatted=$(gofmt -l ./cmd ./internal)
+unformatted=$(gofmt -l ./cmd ./internal ./web)
 if [ -n "$unformatted" ]; then
   echo "$unformatted"
   echo 'ERROR: Hay archivos Go sin formato.' >&2

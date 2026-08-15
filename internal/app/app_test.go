@@ -312,3 +312,38 @@ func TestGallerySelectionAndURLsPreserveFilters(t *testing.T) {
 		}
 	}
 }
+
+func TestFilesTemplateMarksOfflineStorageClearly(t *testing.T) {
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := store.User{Username: "admin", Role: "admin"}
+
+	rootData := pageData{
+		Title: "Archivos", CurrentPath: "/archivos", User: &user, CSRFToken: "csrf",
+		ExplorerPath: "/", ListingMode: "infinito",
+		ExplorerRoots: []explorerRoot{{Name: "USB", URL: "/archivos/ver/USB", Category: "mixed", Offline: true}},
+	}
+	var out bytes.Buffer
+	if err := renderer.Render(&out, "files", rootData); err != nil {
+		t.Fatal(err)
+	}
+	html := out.String()
+	if !strings.Contains(html, `file-root-card is-offline`) || !strings.Contains(html, `No disponible · catálogo local`) {
+		t.Fatal("una unidad desconectada debe mostrarse gris y marcada como no disponible")
+	}
+
+	itemData := pageData{
+		Title: "Archivos", CurrentPath: "/archivos", User: &user, CSRFToken: "csrf",
+		ExplorerPath: "/USB", ListingMode: "infinito",
+		ExplorerItems: []explorerItem{{ID: "f1", Name: "foto.jpg", Kind: "image", DownloadURL: "/archivo/f1/original", Offline: true}},
+	}
+	out.Reset()
+	if err := renderer.Render(&out, "files", itemData); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `file-row is-offline`) {
+		t.Fatal("los elementos de una unidad desconectada deben conservar el estado visual offline")
+	}
+}
