@@ -185,3 +185,28 @@ func TestVirtualRootAllowsOrdinaryXAndZero(t *testing.T) {
 		}
 	}
 }
+
+func TestStorageVolumePersistsStableIdentityMetadata(t *testing.T) {
+	storage, err := Open(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer storage.Close()
+	ctx := context.Background()
+	volume, err := storage.RegisterStorageVolume(ctx, RegisterVolumeInput{
+		PersistentID:   "volume:\\\\?\\volume{abc}\\",
+		HardwareID:     "fsserial:deadbeef",
+		IdentityStable: true,
+		Name:           "USB", Platform: "windows", VirtualRoot: "E", Category: "mixed", IdleTimeoutSeconds: 300, AutoUnmount: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := storage.StorageVolumeByID(ctx, volume.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PersistentID != volume.PersistentID || got.HardwareID != "fsserial:deadbeef" || !got.IdentityStable {
+		t.Fatalf("identidad persistida inesperada: %+v", got)
+	}
+}

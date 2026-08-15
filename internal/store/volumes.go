@@ -12,6 +12,7 @@ var ErrVolumeExists = errors.New("la unidad ya está registrada")
 
 type RegisterVolumeInput struct {
 	PersistentID        string
+	HardwareID          string
 	IdentityStable      bool
 	Name                string
 	Label               string
@@ -100,6 +101,7 @@ func (s *Store) RegisterStorageVolume(ctx context.Context, input RegisterVolumeI
 		created = StorageVolume{
 			ID:                  id,
 			PersistentID:        strings.TrimSpace(input.PersistentID),
+			HardwareID:          strings.TrimSpace(input.HardwareID),
 			IdentityStable:      input.IdentityStable,
 			Name:                strings.TrimSpace(input.Name),
 			Label:               strings.TrimSpace(input.Label),
@@ -146,6 +148,9 @@ func (s *Store) UpdateStorageVolume(ctx context.Context, id string, update Regis
 		}
 		volume := next.Volumes[index]
 		volume.Name = strings.TrimSpace(update.Name)
+		if strings.TrimSpace(update.HardwareID) != "" {
+			volume.HardwareID = strings.TrimSpace(update.HardwareID)
+		}
 		volume.Category = strings.TrimSpace(update.Category)
 		volume.VirtualRoot = strings.TrimSpace(update.VirtualRoot)
 		volume.IdleTimeoutSeconds = update.IdleTimeoutSeconds
@@ -174,7 +179,7 @@ func (s *Store) UpdateStorageVolume(ctx context.Context, id string, update Regis
 	return updated, nil
 }
 
-func (s *Store) RefreshStorageVolumeDevice(ctx context.Context, id, device, volumeName, mountPoint, fsType, label string) error {
+func (s *Store) RefreshStorageVolumeDevice(ctx context.Context, id, device, volumeName, mountPoint, fsType, label, hardwareID string) error {
 	return s.mutate(ctx, func(next *persistedState) error {
 		for i := range next.Volumes {
 			if next.Volumes[i].ID != id {
@@ -194,6 +199,9 @@ func (s *Store) RefreshStorageVolumeDevice(ctx context.Context, id, device, volu
 			}
 			if strings.TrimSpace(label) != "" {
 				next.Volumes[i].Label = strings.TrimSpace(label)
+			}
+			if strings.TrimSpace(hardwareID) != "" {
+				next.Volumes[i].HardwareID = strings.TrimSpace(hardwareID)
 			}
 			next.Volumes[i].UpdatedAt = time.Now().UTC()
 			return nil

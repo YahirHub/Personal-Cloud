@@ -1,12 +1,14 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/url"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 
 	"personalcloud/internal/catalog"
@@ -15,6 +17,7 @@ import (
 
 func (a *App) filesGet(w http.ResponseWriter, r *http.Request) {
 	user := userFromContext(r.Context())
+	mode := a.resolveListingMode(w, r)
 	current, err := normalizeExplorerPath(r.PathValue("path"))
 	if err != nil {
 		http.NotFound(w, r)
@@ -37,6 +40,7 @@ func (a *App) filesGet(w http.ResponseWriter, r *http.Request) {
 		ExplorerPath:   current,
 		Breadcrumbs:    explorerBreadcrumbs(current),
 		MaxUploadBytes: a.cfg.MaxUploadBytes,
+		ListingMode:    mode,
 	})
 	if discoverErr != nil {
 		data.StorageError = discoverErr.Error()
@@ -82,8 +86,50 @@ func (a *App) filesGet(w http.ResponseWriter, r *http.Request) {
 		view = storagepkg.View{ID: cfg.ID, Name: cfg.Name, VirtualRoot: cfg.VirtualRoot, Category: cfg.Category, ReadOnly: cfg.ReadOnly, Registered: true, Online: false, Status: "desconectada"}
 	}
 	data.ExplorerCanWrite = view.Online && !cfg.ReadOnly
-	data.ExplorerItems = browseCatalog(a.catalog.FilesByStorage(cfg.ID), relative, view)
+	allItems := browseCatalog(a.catalog.FilesByStorage(cfg.ID), relative, view)
+	const pageSize = 100
+	page := parsePositiveInt(r.URL.Query().Get("pagina"), 1)
+	data.ListingPage, data.ListingPrev, data.ListingNext = page, maxInt(page-1, 1), page+1
+	data.ListingHasPrev = page > 1
+	if mode == "paginas" {
+		data.ExplorerItems, data.ListingHasNext = pageSlice(allItems, page, pageSize)
+	} else {
+		data.ExplorerItems, data.ExplorerHasMore = offsetSlice(allItems, 0, pageSize)
+		data.ExplorerNext = len(data.ExplorerItems)
+	}
 	a.render(w, http.StatusOK, "files", data)
+}
+
+func (a *App) filesListAPI(w http.ResponseWriter, r *http.Request) {
+	current, err := normalizeExplorerPath(r.URL.Query().Get("path"))
+	if err != nil || current == "/" {
+		http.Error(w, "ruta inválida", http.StatusBadRequest)
+		return
+	}
+	root, relative := splitExplorerPath(current)
+	cfg, err := a.store.StorageVolumeByVirtualRoot(r.Context(), root)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	views, _ := a.storageManager.Views(r.Context())
+	view := storagepkg.View{ID: cfg.ID, Name: cfg.Name, VirtualRoot: cfg.VirtualRoot, Category: cfg.Category, ReadOnly: cfg.ReadOnly, Registered: true, Online: false, Status: "desconectada"}
+	for _, candidate := range views {
+		if candidate.ID == cfg.ID {
+			view = candidate
+			break
+		}
+	}
+	items := browseCatalog(a.catalog.FilesByStorage(cfg.ID), relative, view)
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 || limit > 150 {
+		limit = 100
+	}
+	page, more := offsetSlice(items, offset, limit)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(map[string]any{"items": page, "next": offset + len(page), "has_more": more})
 }
 
 func (a *App) filesUploadPost(w http.ResponseWriter, r *http.Request) {

@@ -210,3 +210,67 @@ code { border-radius: 7px; background: var(--surface-2); padding: 2px 6px; }
   .file-row { grid-template-columns: 38px minmax(0, 1fr); }
   .file-size { grid-column: 2; }
 }
+
+/* Navegación e iconos offline */
+.nav-link { display:flex; align-items:center; gap:10px; }
+.nav-icon { width:20px; height:20px; flex:0 0 auto; }
+.inline-icon { width:18px; height:18px; vertical-align:-3px; }
+.page-header-actions { align-items:center; }
+.header-tools { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:10px; }
+
+/* Selector reutilizable de modo de listado */
+.listing-controls { display:inline-flex; align-items:center; gap:4px; padding:4px; border:1px solid var(--border); border-radius:12px; background:var(--surface); white-space:nowrap; }
+.listing-controls > span { padding:0 8px; color:var(--muted); font-size:.82rem; font-weight:800; }
+.listing-option { padding:7px 10px; border-radius:8px; color:var(--muted); text-decoration:none; font-size:.85rem; font-weight:800; }
+.listing-option.active { background:var(--surface-2); color:var(--text); }
+.page-number { display:inline-flex; align-items:center; color:var(--muted); font-weight:800; }
+.infinite-sentinel { padding:22px 12px; text-align:center; color:var(--muted); font-size:.88rem; }
+
+/* Progreso de indexación */
+.index-progress { margin:16px 0; padding:13px 14px; border:1px solid var(--border); border-radius:13px; background:var(--surface-2); }
+.index-progress.active { border-color:color-mix(in srgb,var(--accent) 45%,var(--border)); }
+.progress-copy { display:flex; justify-content:space-between; gap:12px; margin-bottom:8px; }
+.progress-copy strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.index-progress progress { width:100%; height:9px; accent-color:var(--accent); }
+.index-progress small { display:block; margin-top:7px; color:var(--muted); }
+
+/* Galería y visor */
+.media-card { appearance:none; padding:0; color:inherit; cursor:pointer; text-align:left; }
+.media-badge { position:absolute; top:8px; left:8px; z-index:2; padding:4px 7px; border-radius:8px; background:rgba(0,0,0,.62); color:white; font-size:.7rem; font-weight:900; backdrop-filter:blur(5px); }
+.media-viewer, .upload-dialog { border:0; padding:0; background:transparent; }
+.media-viewer::backdrop, .upload-dialog::backdrop { background:rgba(5,8,15,.82); backdrop-filter:blur(7px); }
+.media-viewer { width:100vw; max-width:none; height:100vh; max-height:none; }
+.viewer-shell { position:relative; display:grid; grid-template-rows:minmax(0,1fr) auto; width:100%; height:100%; background:#080b10; color:white; overflow:hidden; }
+.viewer-stage { min-height:0; display:grid; place-items:center; overflow:hidden; padding:62px 78px 22px; }
+.viewer-image, .viewer-video { display:block; max-width:100%; max-height:100%; object-fit:contain; transition:transform .12s ease-out; transform-origin:center; }
+.viewer-video { width:min(100%,1400px); height:min(100%,850px); }
+.viewer-audio { display:grid; gap:24px; justify-items:center; width:min(640px,90vw); }
+.viewer-audio img { max-width:min(480px,75vw); max-height:55vh; border-radius:18px; object-fit:contain; }
+.viewer-audio audio { width:100%; }
+.viewer-footer { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:14px 20px; border-top:1px solid rgba(255,255,255,.12); background:rgba(10,14,21,.96); }
+.viewer-footer strong, .viewer-footer small { display:block; max-width:70vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.viewer-footer small { margin-top:3px; color:#aeb8c7; }
+.icon-button { display:grid; place-items:center; width:42px; height:42px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--text); cursor:pointer; }
+.viewer-shell .icon-button { position:absolute; z-index:4; border-color:rgba(255,255,255,.18); background:rgba(0,0,0,.42); color:white; }
+.viewer-close { top:14px; right:14px; }
+.viewer-nav { top:50%; transform:translateY(-50%); }
+.viewer-prev { left:16px; }
+.viewer-next { right:16px; }
+
+/* Widget de subida contextual */
+.upload-dialog { width:min(560px,calc(100% - 28px)); }
+.dialog-card { display:grid; gap:16px; border:1px solid var(--border); border-radius:20px; background:var(--surface); color:var(--text); padding:22px; box-shadow:0 24px 80px rgba(0,0,0,.28); }
+.dialog-head { display:flex; justify-content:space-between; align-items:flex-start; gap:14px; }
+.dialog-head h2 { margin:3px 0 0; font-size:1.2rem; word-break:break-word; }
+.dialog-card label { display:grid; gap:7px; }
+.dialog-card small { color:var(--muted); }
+
+@media (max-width:720px) {
+  .page-header-actions { align-items:flex-start; }
+  .header-tools { width:100%; justify-content:flex-start; }
+  .viewer-stage { padding:58px 14px 16px; }
+  .viewer-nav { top:auto; bottom:76px; }
+  .viewer-prev { left:14px; }.viewer-next { right:14px; }
+  .viewer-footer { padding:12px; }
+  .viewer-footer small { display:none; }
+}

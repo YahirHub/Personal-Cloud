@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -26,16 +25,18 @@ const (
 )
 
 var (
-	kernel32DLL               = syscall.NewLazyDLL("kernel32.dll")
-	procFindFirstVolumeW      = kernel32DLL.NewProc("FindFirstVolumeW")
-	procFindNextVolumeW       = kernel32DLL.NewProc("FindNextVolumeW")
-	procFindVolumeClose       = kernel32DLL.NewProc("FindVolumeClose")
-	procGetVolumePathNamesW   = kernel32DLL.NewProc("GetVolumePathNamesForVolumeNameW")
-	procGetVolumeInformationW = kernel32DLL.NewProc("GetVolumeInformationW")
-	procGetDriveTypeW         = kernel32DLL.NewProc("GetDriveTypeW")
-	procGetDiskFreeSpaceExW   = kernel32DLL.NewProc("GetDiskFreeSpaceExW")
-	procGetLogicalDrives      = kernel32DLL.NewProc("GetLogicalDrives")
-	procFlushFileBuffers      = kernel32DLL.NewProc("FlushFileBuffers")
+	kernel32DLL                 = syscall.NewLazyDLL("kernel32.dll")
+	procFindFirstVolumeW        = kernel32DLL.NewProc("FindFirstVolumeW")
+	procFindNextVolumeW         = kernel32DLL.NewProc("FindNextVolumeW")
+	procFindVolumeClose         = kernel32DLL.NewProc("FindVolumeClose")
+	procGetVolumePathNamesW     = kernel32DLL.NewProc("GetVolumePathNamesForVolumeNameW")
+	procGetVolumeInformationW   = kernel32DLL.NewProc("GetVolumeInformationW")
+	procGetDriveTypeW           = kernel32DLL.NewProc("GetDriveTypeW")
+	procGetDiskFreeSpaceExW     = kernel32DLL.NewProc("GetDiskFreeSpaceExW")
+	procGetLogicalDrives        = kernel32DLL.NewProc("GetLogicalDrives")
+	procFlushFileBuffers        = kernel32DLL.NewProc("FlushFileBuffers")
+	procSetVolumeMountPointW    = kernel32DLL.NewProc("SetVolumeMountPointW")
+	procDeleteVolumeMountPointW = kernel32DLL.NewProc("DeleteVolumeMountPointW")
 )
 
 func discoverPlatformVolumes(ctx context.Context, mountRoot string) ([]DiscoveredVolume, error) {
@@ -65,7 +66,7 @@ func discoverPlatformVolumes(ctx context.Context, mountRoot string) ([]Discovere
 			}
 			driveType := windowsDriveType(typeTarget)
 			if driveType == driveFixed || driveType == driveRemovable {
-				label, fsType, flags := windowsVolumeInfo(volumeName)
+				label, fsType, flags, serial := windowsVolumeInfo(volumeName)
 				capacity, free := windowsSpace(volumeName)
 				system := false
 				for _, path := range paths {
@@ -73,6 +74,10 @@ func discoverPlatformVolumes(ctx context.Context, mountRoot string) ([]Discovere
 						system = true
 						break
 					}
+				}
+				// Volúmenes fijos ocultos muy pequeños suelen ser EFI/recovery, no almacenamiento del usuario.
+				if !system && driveType == driveFixed && mountPoint == "" && capacity > 0 && capacity < 512<<20 {
+					goto nextVolume
 				}
 				if label == "" {
 					if mountPoint != "" {
@@ -83,6 +88,7 @@ func discoverPlatformVolumes(ctx context.Context, mountRoot string) ([]Discovere
 				}
 				result = append(result, DiscoveredVolume{
 					PersistentID:   "volume:" + strings.ToLower(volumeName),
+					HardwareID:     fmt.Sprintf("fsserial:%08x", serial),
 					IdentityStable: true,
 					Name:           label,
 					Label:          label,
@@ -101,6 +107,7 @@ func discoverPlatformVolumes(ctx context.Context, mountRoot string) ([]Discovere
 			}
 		}
 
+	nextVolume:
 		for i := range buffer {
 			buffer[i] = 0
 		}
@@ -133,10 +140,18 @@ func mountPlatformVolume(ctx context.Context, cfg store.StorageVolume, detected 
 	if target == "" {
 		return "", errors.New("no hay una letra de unidad libre para montar el volumen")
 	}
-	cmd := exec.CommandContext(ctx, "mountvol", target, volumeName)
-	output, err := cmd.CombinedOutput()
+	_ = ctx
+	targetPtr, err := syscall.UTF16PtrFromString(target)
 	if err != nil {
-		return "", fmt.Errorf("mountvol: %v: %s", err, strings.TrimSpace(string(output)))
+		return "", err
+	}
+	volumePtr, err := syscall.UTF16PtrFromString(volumeName)
+	if err != nil {
+		return "", err
+	}
+	r1, _, callErr := procSetVolumeMountPointW.Call(uintptr(unsafe.Pointer(targetPtr)), uintptr(unsafe.Pointer(volumePtr)))
+	if r1 == 0 {
+		return "", fmt.Errorf("asignar punto de montaje %s: %w", target, callErr)
 	}
 	return target, nil
 }
@@ -170,10 +185,14 @@ func unmountPlatformVolume(ctx context.Context, cfg store.StorageVolume, mountPo
 		return fmt.Errorf("desmontar volumen: %w", err)
 	}
 
-	cmd := exec.CommandContext(ctx, "mountvol", mountPoint, "/d")
-	output, err := cmd.CombinedOutput()
+	_ = ctx
+	mountPtr, err := syscall.UTF16PtrFromString(mountPoint)
 	if err != nil {
-		return fmt.Errorf("retirar punto de montaje: %v: %s", err, strings.TrimSpace(string(output)))
+		return err
+	}
+	r1, _, callErr := procDeleteVolumeMountPointW.Call(uintptr(unsafe.Pointer(mountPtr)))
+	if r1 == 0 {
+		return fmt.Errorf("retirar punto de montaje %s: %w", mountPoint, callErr)
 	}
 	if err := windowsVolumeControl(handle, fsctlUnlockVolume); err == nil {
 		locked = false
@@ -213,10 +232,10 @@ func windowsVolumePaths(volumeName string) ([]string, error) {
 	return nil, errors.New("no se pudieron obtener puntos de montaje")
 }
 
-func windowsVolumeInfo(volumeName string) (string, string, uint32) {
+func windowsVolumeInfo(volumeName string) (string, string, uint32, uint32) {
 	ptr, err := syscall.UTF16PtrFromString(volumeName)
 	if err != nil {
-		return "", "", 0
+		return "", "", 0, 0
 	}
 	label := make([]uint16, 261)
 	fsName := make([]uint16, 64)
@@ -230,9 +249,9 @@ func windowsVolumeInfo(volumeName string) (string, string, uint32) {
 		uintptr(unsafe.Pointer(&fsName[0])), uintptr(len(fsName)),
 	)
 	if r1 == 0 {
-		return "", "", 0
+		return "", "", 0, 0
 	}
-	return syscall.UTF16ToString(label), syscall.UTF16ToString(fsName), flags
+	return syscall.UTF16ToString(label), syscall.UTF16ToString(fsName), flags, serial
 }
 
 func windowsSpace(path string) (uint64, uint64) {

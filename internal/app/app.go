@@ -59,15 +59,25 @@ type pageData struct {
 	StorageItems     []storagePageItem
 	StorageError     string
 	Stats            dashboardStats
-	Photos           []photoPageItem
-	PhotoOffset      int
-	PhotoNext        int
-	PhotoHasMore     bool
+	Media            []mediaPageItem
+	MediaOffset      int
+	MediaNext        int
+	MediaHasMore     bool
+	MediaTotal       int
+	ListingMode      string
+	ListingBaseURL   string
+	ListingPage      int
+	ListingPrev      int
+	ListingNext      int
+	ListingHasPrev   bool
+	ListingHasNext   bool
 	ExplorerItems    []explorerItem
 	ExplorerRoots    []explorerRoot
 	Breadcrumbs      []breadcrumbItem
 	ExplorerPath     string
 	ExplorerCanWrite bool
+	ExplorerHasMore  bool
+	ExplorerNext     int
 	MaxUploadBytes   int64
 }
 
@@ -188,17 +198,22 @@ func (a *App) routes() {
 	a.mux.Handle("GET /almacenamiento", a.requireAuth(http.HandlerFunc(a.storageGet)))
 	a.mux.Handle("GET /archivos", a.requireAuth(http.HandlerFunc(a.filesGet)))
 	a.mux.Handle("GET /archivos/ver/{path...}", a.requireAuth(http.HandlerFunc(a.filesGet)))
+	a.mux.Handle("GET /api/archivos/listado", a.requireAuth(http.HandlerFunc(a.filesListAPI)))
 	a.mux.Handle("POST /archivos/subir", a.requireAuth(http.HandlerFunc(a.filesUploadPost)))
-	a.mux.Handle("GET /fotos", a.requireAuth(http.HandlerFunc(a.photosGet)))
-	a.mux.Handle("GET /fotos/{id}/miniatura", a.requireAuth(http.HandlerFunc(a.photoThumbnailGet)))
-	a.mux.Handle("GET /fotos/{id}/vista-previa", a.requireAuth(http.HandlerFunc(a.photoPreviewGet)))
+	a.mux.Handle("GET /galeria", a.requireAuth(http.HandlerFunc(a.galleryGet)))
+	a.mux.Handle("GET /api/galeria", a.requireAuth(http.HandlerFunc(a.galleryAPI)))
+	a.mux.Handle("GET /api/indexacion", a.requireAuth(http.HandlerFunc(a.indexStatusAPI)))
+	a.mux.Handle("GET /galeria/{id}/miniatura", a.requireAuth(http.HandlerFunc(a.photoThumbnailGet)))
+	a.mux.Handle("GET /galeria/{id}/vista-previa", a.requireAuth(http.HandlerFunc(a.photoPreviewGet)))
+	a.mux.Handle("GET /fotos", a.requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/galeria", http.StatusMovedPermanently)
+	})))
 	a.mux.Handle("GET /archivo/{id}/original", a.requireAuth(http.HandlerFunc(a.originalFileGet)))
 	a.mux.Handle("POST /almacenamiento/registrar", a.requireAuth(http.HandlerFunc(a.storageRegisterPost)))
 	a.mux.Handle("POST /almacenamiento/{id}/configuracion", a.requireAuth(http.HandlerFunc(a.storageUpdatePost)))
 	a.mux.Handle("POST /almacenamiento/{id}/montar", a.requireAuth(http.HandlerFunc(a.storageMountPost)))
 	a.mux.Handle("POST /almacenamiento/{id}/desmontar", a.requireAuth(http.HandlerFunc(a.storageUnmountPost)))
 	a.mux.Handle("POST /almacenamiento/{id}/indexar", a.requireAuth(http.HandlerFunc(a.storageIndexPost)))
-	a.mux.Handle("POST /almacenamiento/{id}/subir", a.requireAuth(http.HandlerFunc(a.storageUploadPost)))
 	a.mux.HandleFunc("GET /salud", a.healthGet)
 	a.mux.Handle("/webdav", a.webdavAuth(a.webdav))
 	a.mux.Handle("/webdav/", a.webdavAuth(a.webdav))

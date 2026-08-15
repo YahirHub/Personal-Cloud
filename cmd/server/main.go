@@ -12,11 +12,17 @@ import (
 
 	"personalcloud/internal/app"
 	"personalcloud/internal/config"
+	"personalcloud/internal/privilege"
 	"personalcloud/internal/store"
 )
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	if relaunched, err := privilege.Ensure(); err != nil {
+		logger.Warn("no se pudo solicitar elevación automática; algunas operaciones de volumen pueden fallar", "error", err)
+	} else if relaunched {
+		return
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		logger.Error("configuración inválida", "error", err)

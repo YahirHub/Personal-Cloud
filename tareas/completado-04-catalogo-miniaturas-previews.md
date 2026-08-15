@@ -14,7 +14,7 @@ Navegar el catálogo de fotos desde el almacenamiento interno sin mantener monta
 - Miniatura JPEG de hasta 320 px.
 - Preview JPEG de hasta 1600 px.
 - Caché privada dentro de `data/cache/`.
-- Galería `/fotos` con lazy loading y paginación.
+- Galería `/galeria` con lazy loading y paginación.
 - Abrir miniatura/preview no monta el disco original.
 - Abrir el original resuelve el VFS, monta su unidad y mantiene el lease hasta terminar el stream.
 - Al modificar una imagen en la misma ruta se invalida y regenera su caché.

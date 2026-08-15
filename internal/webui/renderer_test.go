@@ -31,15 +31,25 @@ type renderData struct {
 	Stats            renderStats
 	StorageItems     []any
 	StorageError     string
-	Photos           []any
+	Media            []any
 	ExplorerItems    []any
 	ExplorerRoots    []any
 	Breadcrumbs      []any
 	ExplorerPath     string
 	ExplorerCanWrite bool
-	PhotoOffset      int
-	PhotoNext        int
-	PhotoHasMore     bool
+	MediaOffset      int
+	MediaNext        int
+	MediaHasMore     bool
+	MediaTotal       int
+	ListingMode      string
+	ListingBaseURL   string
+	ListingPage      int
+	ListingPrev      int
+	ListingNext      int
+	ListingHasPrev   bool
+	ListingHasNext   bool
+	ExplorerHasMore  bool
+	ExplorerNext     int
 	MaxUploadBytes   int64
 }
 
@@ -51,7 +61,7 @@ func TestRenderPages(t *testing.T) {
 	pages := []string{"setup", "login", "onboarding", "dashboard", "storage", "files", "photos"}
 	for _, page := range pages {
 		t.Run(page, func(t *testing.T) {
-			data := renderData{Title: "Prueba", Description: "Prueba", CSRFToken: "token"}
+			data := renderData{Title: "Prueba", Description: "Prueba", CSRFToken: "token", ListingMode: "infinito", ListingBaseURL: "/galeria", ExplorerPath: "/"}
 			if page != "setup" && page != "login" {
 				data.User = &renderUser{Username: "admin", Role: "admin"}
 			}

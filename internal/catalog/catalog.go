@@ -141,6 +141,48 @@ func (c *Catalog) ListPhotos(offset, limit int) []File {
 	return photos[offset:end]
 }
 
+func (c *Catalog) ListMedia(offset, limit int) []File {
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 80
+	}
+	c.mu.RLock()
+	items := make([]File, 0)
+	for _, file := range c.files {
+		if file.Kind == "image" || file.Kind == "video" || file.Kind == "audio" {
+			items = append(items, file)
+		}
+	}
+	c.mu.RUnlock()
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].ModTime.Equal(items[j].ModTime) {
+			return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+		}
+		return items[i].ModTime.After(items[j].ModTime)
+	})
+	if offset >= len(items) {
+		return nil
+	}
+	end := offset + limit
+	if end > len(items) {
+		end = len(items)
+	}
+	return items[offset:end]
+}
+
+func (c *Catalog) MediaCount() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	count := 0
+	for _, file := range c.files {
+		if file.Kind == "image" || file.Kind == "video" || file.Kind == "audio" {
+			count++
+		}
+	}
+	return count
+}
 func (c *Catalog) FilesByStorage(storageID string) []File {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

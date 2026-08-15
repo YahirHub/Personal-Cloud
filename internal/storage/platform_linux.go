@@ -42,22 +42,14 @@ func discoverPlatformVolumes(ctx context.Context, mountRoot string) ([]Discovere
 	}
 
 	labels := linuxLabelMap()
-	entries, err := os.ReadDir("/dev/disk/by-uuid")
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("leer identidades de discos: %w", err)
-	}
-
-	result := make([]DiscoveredVolume, 0, len(entries))
-	for _, entry := range entries {
+	hardware := linuxHardwareIDMap()
+	identities := linuxPersistentIdentities()
+	result := make([]DiscoveredVolume, 0, len(identities))
+	for _, identity := range identities {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		uuid := entry.Name()
-		link := filepath.Join("/dev/disk/by-uuid", uuid)
-		device, err := filepath.EvalSymlinks(link)
+		device, err := filepath.EvalSymlinks(identity.link)
 		if err != nil {
 			continue
 		}
@@ -72,38 +64,86 @@ func discoverPlatformVolumes(ctx context.Context, mountRoot string) ([]Discovere
 			label = filepath.Base(mount.mountPoint)
 		}
 		if label == "" {
-			label = "Unidad " + shortID(uuid)
+			label = "Unidad " + shortID(identity.value)
 		}
 		removable := linuxRemovable(base)
-
 		var capacity, free uint64
-		readOnly := false
-		mountPoint, fsType := "", ""
+		readOnly, mountPoint, fsType := false, "", ""
 		if mounted {
-			mountPoint = mount.mountPoint
-			fsType = mount.fsType
-			readOnly = mount.readOnly
+			mountPoint, fsType, readOnly = mount.mountPoint, mount.fsType, mount.readOnly
 			capacity, free = linuxSpace(mount.mountPoint)
 		}
-
 		result = append(result, DiscoveredVolume{
-			PersistentID:   "uuid:" + uuid,
-			IdentityStable: true,
-			Name:           label,
-			Label:          label,
-			Platform:       "linux",
-			Device:         link,
-			MountPoint:     mountPoint,
-			FSType:         fsType,
-			Mounted:        mounted,
-			ReadOnly:       readOnly,
-			System:         system,
-			Removable:      removable,
-			Capacity:       capacity,
-			Free:           free,
+			PersistentID: identity.kind + ":" + identity.value,
+			HardwareID:   hardware[device], IdentityStable: true,
+			Name: label, Label: label, Platform: "linux", Device: identity.link,
+			MountPoint: mountPoint, FSType: fsType, Mounted: mounted, ReadOnly: readOnly,
+			System: system, Removable: removable, Capacity: capacity, Free: free,
 		})
 	}
 	return result, nil
+}
+
+type linuxIdentity struct{ kind, value, link string }
+
+func linuxPersistentIdentities() []linuxIdentity {
+	var result []linuxIdentity
+	seen := map[string]bool{}
+	for _, spec := range []struct{ dir, kind string }{{"/dev/disk/by-uuid", "uuid"}, {"/dev/disk/by-partuuid", "partuuid"}} {
+		entries, err := os.ReadDir(spec.dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			link := filepath.Join(spec.dir, entry.Name())
+			real, err := filepath.EvalSymlinks(link)
+			if err != nil {
+				continue
+			}
+			if seen[real] {
+				continue
+			}
+			seen[real] = true
+			result = append(result, linuxIdentity{kind: spec.kind, value: entry.Name(), link: link})
+		}
+	}
+	return result
+}
+
+func linuxHardwareIDMap() map[string]string {
+	result := map[string]string{}
+	entries, err := os.ReadDir("/dev/disk/by-id")
+	if err != nil {
+		return result
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasPrefix(name, "wwn-") || strings.Contains(name, "-part") {
+			continue
+		}
+		real, err := filepath.EvalSymlinks(filepath.Join("/dev/disk/by-id", name))
+		if err != nil {
+			continue
+		}
+		result[real] = "by-id:" + name
+	}
+	// También relaciona las particiones con el identificador del disco padre cuando existe.
+	for _, entry := range entries {
+		name := entry.Name()
+		idx := strings.LastIndex(name, "-part")
+		if idx <= 0 {
+			continue
+		}
+		baseName := name[:idx]
+		if !strings.HasPrefix(baseName, "usb-") && !strings.HasPrefix(baseName, "ata-") && !strings.HasPrefix(baseName, "nvme-") {
+			continue
+		}
+		real, err := filepath.EvalSymlinks(filepath.Join("/dev/disk/by-id", name))
+		if err == nil {
+			result[real] = "by-id:" + baseName
+		}
+	}
+	return result
 }
 
 func isCriticalLinuxMount(mountPoint string) bool {

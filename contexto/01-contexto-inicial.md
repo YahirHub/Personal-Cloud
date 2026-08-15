@@ -31,7 +31,7 @@ Esta primera implementación cubre bootstrap seguro, autenticación, sesiones, r
 - Rate limit de setup por IP: 5/10 min.
 - Rate limit de login por IP: 12/15 min y por usuario: 6/15 min.
 - `X-Forwarded-For` solo se respeta cuando `RemoteAddr` pertenece a un CIDR configurado como proxy confiable.
-- Rutas amigables canónicas: `/iniciar-sesion`, `/bienvenida`, `/inicio`, `/almacenamiento`, `/fotos`; `/setup` se conserva por requisito de bootstrap.
+- Rutas amigables canónicas: `/iniciar-sesion`, `/bienvenida`, `/inicio`, `/almacenamiento`, `/galeria`; `/setup` se conserva por requisito de bootstrap.
 - Los templates usan layout y componentes reutilizables mediante `html/template`.
 - Los recursos se embeben en el binario con `embed`.
 - El diseño visual actual es funcional y sencillo; el pulido de UI será incremental.

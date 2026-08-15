@@ -62,7 +62,7 @@ indexar unidad
  -> timeout
  -> desmontaje
 
-GET /fotos
+GET /galeria
  -> catálogo/cache únicamente
 
 GET /archivos/<id>/original

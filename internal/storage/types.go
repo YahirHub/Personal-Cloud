@@ -4,6 +4,7 @@ import "time"
 
 type DiscoveredVolume struct {
 	PersistentID   string
+	HardwareID     string
 	IdentityStable bool
 	Name           string
 	Label          string
@@ -23,6 +24,7 @@ type DiscoveredVolume struct {
 type View struct {
 	ID                 string
 	PersistentID       string
+	HardwareID         string
 	IdentityStable     bool
 	Name               string
 	Label              string

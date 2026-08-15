@@ -11,7 +11,7 @@
   <div class="stats-grid stats-grid-4">
     <article class="stat-card"><span>Unidades</span><strong>{{.Stats.Volumes}}</strong><small>{{.Stats.Online}} conectadas</small></article>
     <article class="stat-card"><span>Archivos</span><strong>{{.Stats.Files}}</strong><small>{{formatBytes .Stats.Bytes}} catalogados</small></article>
-    <article class="stat-card"><span>Fotos</span><strong>{{.Stats.Photos}}</strong><small>Miniaturas en almacenamiento interno</small></article>
+    <article class="stat-card"><span>Galería</span><strong>{{.Stats.Photos}}</strong><small>Imágenes catalogadas con caché interna</small></article>
     <article class="stat-card"><span>Estado</span><strong>Operativo</strong><small>Healthcheck: /salud</small></article>
   </div>
 
@@ -20,7 +20,7 @@
     <p>Registra una unidad, define su categoría y raíz virtual, después inicia la indexación. Las miniaturas quedan disponibles aunque el disco vuelva a desmontarse.</p>
     <div class="button-row">
       <a class="button button-secondary" href="/almacenamiento">Administrar unidades</a>
-      <a class="button button-ghost" href="/fotos">Abrir fotos</a>
+      <a class="button button-ghost" href="/galeria">Abrir galería</a>
     </div>
   </div>
 

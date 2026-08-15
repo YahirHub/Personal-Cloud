@@ -201,3 +201,100 @@ func TestStorageTemplateExposesIndexingActions(t *testing.T) {
 		t.Fatal("una unidad detectada debe ofrecer Registrar e indexar")
 	}
 }
+
+func TestStorageTemplateKeepsUploadOutOfStorageCards(t *testing.T) {
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := store.User{Username: "admin", Role: "admin"}
+	data := pageData{
+		Title: "Almacenamiento", User: &user, CSRFToken: "csrf",
+		StorageItems: []storagePageItem{{
+			View: storage.View{ID: "v1", PersistentID: "volume:test", HardwareID: "fsserial:1234", Registered: true, Online: true, Name: "USB", Category: "mixed", VirtualRoot: "E", IdleTimeoutSeconds: 300, Capacity: 64 << 30, Free: 32 << 30},
+			Job:  catalog.JobStatus{StorageID: "v1", State: "scanning", Scanned: 50, Total: 200}, JobPercent: 25,
+		}},
+	}
+	var out bytes.Buffer
+	if err := renderer.Render(&out, "storage", data); err != nil {
+		t.Fatal(err)
+	}
+	html := out.String()
+	if strings.Contains(html, "Subir archivo a esta unidad") {
+		t.Fatal("almacenamiento no debe contener el formulario grande de subida")
+	}
+	if !strings.Contains(html, "25%") || !strings.Contains(html, "50 de 200") {
+		t.Fatal("la unidad debe mostrar progreso real de indexación")
+	}
+	if !strings.Contains(html, "fsserial:1234") || !strings.Contains(html, "volume:test") {
+		t.Fatal("deben mostrarse identificadores persistentes del volumen")
+	}
+}
+
+func TestGalleryTemplateIsOfflineAndHasMediaViewer(t *testing.T) {
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := store.User{Username: "admin", Role: "admin"}
+	data := pageData{
+		Title: "Galería", CurrentPath: "/galeria", User: &user, CSRFToken: "csrf",
+		ListingMode: "infinito", ListingBaseURL: "/galeria", MediaHasMore: true, MediaNext: 80,
+		Media: []mediaPageItem{{File: catalog.File{ID: "m1", Name: "video.mp4", Kind: "video"}, ThumbnailURL: "/galeria/m1/miniatura", OriginalURL: "/archivo/m1/original"}},
+	}
+	var out bytes.Buffer
+	if err := renderer.Render(&out, "photos", data); err != nil {
+		t.Fatal(err)
+	}
+	html := out.String()
+	for _, want := range []string{"Galería", "data-media-viewer", "A/D", "W/S", "data-gallery-sentinel"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("galería no contiene %q", want)
+		}
+	}
+	if strings.Contains(html, "https://") || strings.Contains(html, "http://") {
+		t.Fatal("la galería no debe depender de assets remotos/CDN")
+	}
+}
+
+func TestFilesTemplateUsesContextualUploadDialog(t *testing.T) {
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := store.User{Username: "admin", Role: "admin"}
+	data := pageData{
+		Title: "Archivos", CurrentPath: "/archivos", User: &user, CSRFToken: "csrf",
+		ExplorerPath: "/E", ExplorerCanWrite: true, ListingMode: "infinito", ListingBaseURL: "/archivos/ver/E",
+	}
+	var out bytes.Buffer
+	if err := renderer.Render(&out, "files", data); err != nil {
+		t.Fatal(err)
+	}
+	html := out.String()
+	if !strings.Contains(html, "Subir aquí") || !strings.Contains(html, "data-upload-dialog") {
+		t.Fatal("una carpeta concreta debe ofrecer subida mediante botón + diálogo")
+	}
+	if strings.Contains(html, "upload-panel") {
+		t.Fatal("no debe existir panel grande de subida")
+	}
+}
+
+func TestListingModeDefaultsToInfiniteAndPersistsChoice(t *testing.T) {
+	a := &App{}
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/galeria", nil)
+	if got := a.resolveListingMode(rr, req); got != "infinito" {
+		t.Fatalf("modo por defecto=%q", got)
+	}
+
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/galeria?modo=paginas", nil)
+	if got := a.resolveListingMode(rr, req); got != "paginas" {
+		t.Fatalf("modo explícito=%q", got)
+	}
+	cookie := findCookie(rr.Result().Cookies(), listingCookie)
+	if cookie == nil || cookie.Value != "paginas" {
+		t.Fatal("la preferencia de listado debe persistirse")
+	}
+}

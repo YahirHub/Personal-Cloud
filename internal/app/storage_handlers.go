@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"personalcloud/internal/catalog"
 	storagepkg "personalcloud/internal/storage"
 )
 
@@ -57,6 +58,7 @@ func (a *App) storageGet(w http.ResponseWriter, r *http.Request) {
 		item := storagePageItem{View: view, SuggestedRoot: suggestedVirtualRoot(view.Name)}
 		if view.Registered {
 			item.Job = a.indexer.Status(view.ID)
+			item.JobPercent = item.Job.Percent()
 		}
 		items = append(items, item)
 	}
@@ -80,39 +82,91 @@ func (a *App) storageGet(w http.ResponseWriter, r *http.Request) {
 	a.render(w, http.StatusOK, "storage", data)
 }
 
-func (a *App) photosGet(w http.ResponseWriter, r *http.Request) {
+func (a *App) galleryGet(w http.ResponseWriter, r *http.Request) {
 	user := userFromContext(r.Context())
-	offset, _ := strconv.Atoi(r.URL.Query().Get("desde"))
-	if offset < 0 {
-		offset = 0
+	mode := a.resolveListingMode(w, r)
+	const pageSize = 80
+	page := parsePositiveInt(r.URL.Query().Get("pagina"), 1)
+	offset := 0
+	if mode == "paginas" {
+		offset = (page - 1) * pageSize
 	}
-	files := a.catalog.ListPhotos(offset, 101)
-	hasMore := len(files) > 100
+	files := a.catalog.ListMedia(offset, pageSize+1)
+	hasMore := len(files) > pageSize
 	if hasMore {
-		files = files[:100]
+		files = files[:pageSize]
 	}
-	photos := make([]photoPageItem, 0, len(files))
+	media := make([]mediaPageItem, 0, len(files))
 	for _, file := range files {
-		item := photoPageItem{File: file, OriginalURL: "/archivo/" + file.ID + "/original"}
-		if file.Thumbnail {
-			item.ThumbnailURL = "/fotos/" + file.ID + "/miniatura"
-		}
-		if file.Preview {
-			item.PreviewURL = "/fotos/" + file.ID + "/vista-previa"
-		}
-		photos = append(photos, item)
+		media = append(media, a.mediaItem(file))
 	}
+	total := a.catalog.MediaCount()
 	data := a.csrfData(w, r, pageData{
-		Title:        "Fotos",
-		Description:  "Catálogo de fotos disponible aun con los originales desmontados.",
-		CurrentPath:  "/fotos",
-		User:         user,
-		Photos:       photos,
-		PhotoOffset:  offset,
-		PhotoNext:    offset + len(files),
-		PhotoHasMore: hasMore,
+		Title: "Galería", Description: "Imágenes, videos y audio con caché local y originales bajo demanda.", CurrentPath: "/galeria", User: user,
+		Media: media, MediaOffset: offset, MediaNext: offset + len(files), MediaHasMore: hasMore, MediaTotal: total,
+		ListingMode: mode, ListingBaseURL: "/galeria", ListingPage: page, ListingPrev: maxInt(page-1, 1), ListingNext: page + 1, ListingHasPrev: page > 1, ListingHasNext: hasMore,
 	})
 	a.render(w, http.StatusOK, "photos", data)
+}
+
+func (a *App) mediaItem(file catalog.File) mediaPageItem {
+	item := mediaPageItem{File: file, OriginalURL: "/archivo/" + file.ID + "/original"}
+	if file.Thumbnail {
+		item.ThumbnailURL = "/galeria/" + file.ID + "/miniatura"
+	}
+	if file.Preview {
+		item.PreviewURL = "/galeria/" + file.ID + "/vista-previa"
+	}
+	return item
+}
+
+func (a *App) galleryAPI(w http.ResponseWriter, r *http.Request) {
+	offset := parsePositiveInt(r.URL.Query().Get("offset"), 0)
+	limit := parsePositiveInt(r.URL.Query().Get("limit"), 80)
+	if limit > 120 {
+		limit = 120
+	}
+	files := a.catalog.ListMedia(offset, limit+1)
+	hasMore := len(files) > limit
+	if hasMore {
+		files = files[:limit]
+	}
+	items := make([]mediaPageItem, 0, len(files))
+	for _, file := range files {
+		items = append(items, a.mediaItem(file))
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(map[string]any{"items": items, "next": offset + len(files), "has_more": hasMore})
+}
+
+func (a *App) indexStatusAPI(w http.ResponseWriter, r *http.Request) {
+	type status struct {
+		catalog.JobStatus
+		Percent int `json:"percent"`
+	}
+	jobs := a.indexer.Statuses()
+	out := make([]status, 0, len(jobs))
+	for _, job := range jobs {
+		out = append(out, status{JobStatus: job, Percent: job.Percent()})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+func parsePositiveInt(value string, fallback int) int {
+	n, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || n < 0 {
+		return fallback
+	}
+	return n
+}
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (a *App) storageRegisterPost(w http.ResponseWriter, r *http.Request) {
@@ -221,93 +275,6 @@ func (a *App) storageIndexPost(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/almacenamiento?ok="+urlQuery("Indexación iniciada"), http.StatusSeeOther)
 }
 
-func (a *App) storageUploadPost(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	cfg, err := a.store.StorageVolumeByID(r.Context(), id)
-	if err != nil {
-		redirectStorageError(w, r, err)
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, a.cfg.MaxUploadBytes+multipartOverhead)
-	reader, err := r.MultipartReader()
-	if err != nil {
-		redirectStorageError(w, r, errors.New("formulario de subida inválido"))
-		return
-	}
-	var csrfToken, targetDir string
-	var uploaded bool
-	for {
-		part, err := reader.NextPart()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			redirectStorageError(w, r, errors.New("no se pudo leer la subida"))
-			return
-		}
-		name := part.FormName()
-		switch name {
-		case "csrf_token":
-			value, readErr := readSmallPart(part, 4096)
-			if readErr != nil {
-				redirectStorageError(w, r, readErr)
-				return
-			}
-			csrfToken = value
-		case "target_dir":
-			value, readErr := readSmallPart(part, 4096)
-			if readErr != nil {
-				redirectStorageError(w, r, readErr)
-				return
-			}
-			targetDir = strings.TrimSpace(value)
-		case "file":
-			if !a.validCSRFValue(r, csrfToken) {
-				http.Error(w, "La sesión del formulario no es válida.", http.StatusBadRequest)
-				return
-			}
-			fileName := safeUploadName(part.FileName())
-			if fileName == "" {
-				redirectStorageError(w, r, errors.New("nombre de archivo inválido"))
-				return
-			}
-			virtualDir, cleanErr := safeVirtualSubdir(targetDir)
-			if cleanErr != nil {
-				redirectStorageError(w, r, cleanErr)
-				return
-			}
-			base := "/" + cfg.VirtualRoot
-			if virtualDir != "" {
-				base = path.Join(base, virtualDir)
-				if err := a.vfs.MkdirAll(r.Context(), base); err != nil {
-					redirectStorageError(w, r, err)
-					return
-				}
-			}
-			target := path.Join(base, fileName)
-			if _, err := a.vfs.WriteAtomic(r.Context(), target, part, a.cfg.MaxUploadBytes, false); err != nil {
-				redirectStorageError(w, r, err)
-				return
-			}
-			uploaded = true
-		default:
-			_, _ = io.Copy(io.Discard, io.LimitReader(part, 4096))
-		}
-		_ = part.Close()
-		if uploaded {
-			break
-		}
-	}
-	if !uploaded {
-		redirectStorageError(w, r, errors.New("no se recibió ningún archivo"))
-		return
-	}
-	a.indexer.Enqueue(id)
-	user := userFromContext(r.Context())
-	_ = a.store.Audit(r.Context(), user.ID, "file_upload", "correcto", a.clientIP(r))
-	http.Redirect(w, r, "/almacenamiento?ok="+urlQuery("Archivo subido correctamente"), http.StatusSeeOther)
-}
-
 func (a *App) photoThumbnailGet(w http.ResponseWriter, r *http.Request) {
 	a.serveCatalogCache(w, r, "thumbnail")
 }
@@ -318,11 +285,11 @@ func (a *App) photoPreviewGet(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) serveCatalogCache(w http.ResponseWriter, r *http.Request, size string) {
 	file, ok := a.catalog.ByID(r.PathValue("id"))
-	if !ok || file.Kind != "image" {
+	if !ok || (file.Kind != "image" && file.Kind != "video" && file.Kind != "audio") {
 		http.NotFound(w, r)
 		return
 	}
-	if size == "thumbnail" && !file.Thumbnail || size == "preview" && !file.Preview {
+	if size == "thumbnail" && !file.Thumbnail || size == "preview" && (file.Kind != "image" || !file.Preview) {
 		http.NotFound(w, r)
 		return
 	}

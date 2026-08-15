@@ -50,6 +50,7 @@ type User struct {
 type StorageVolume struct {
 	ID                  string    `json:"id"`
 	PersistentID        string    `json:"persistent_id"`
+	HardwareID          string    `json:"hardware_id,omitempty"`
 	IdentityStable      bool      `json:"identity_stable"`
 	Name                string    `json:"name"`
 	Label               string    `json:"label,omitempty"`

@@ -10,26 +10,27 @@ import (
 type storagePageItem struct {
 	storage.View
 	Job           catalog.JobStatus
+	JobPercent    int
 	SuggestedRoot string
 }
 
-type photoPageItem struct {
+type mediaPageItem struct {
 	catalog.File
-	ThumbnailURL string
-	PreviewURL   string
-	OriginalURL  string
+	ThumbnailURL string `json:"thumbnail_url"`
+	PreviewURL   string `json:"preview_url"`
+	OriginalURL  string `json:"original_url"`
 }
 
 type explorerItem struct {
-	Name        string
-	Kind        string
-	Size        int64
-	ModTime     time.Time
-	URL         string
-	DownloadURL string
-	IsDir       bool
-	Offline     bool
-	StorageName string
+	Name        string    `json:"name"`
+	Kind        string    `json:"kind"`
+	Size        int64     `json:"size"`
+	ModTime     time.Time `json:"mod_time"`
+	URL         string    `json:"url"`
+	DownloadURL string    `json:"download_url"`
+	IsDir       bool      `json:"is_dir"`
+	Offline     bool      `json:"offline"`
+	StorageName string    `json:"storage_name"`
 }
 
 type breadcrumbItem struct {

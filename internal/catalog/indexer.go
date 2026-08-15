@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"mime"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -23,14 +24,31 @@ import (
 const maxThumbnailSourcePixels int64 = 80_000_000
 
 type JobStatus struct {
-	StorageID string
-	State     string
-	Scanned   int
-	Images    int
-	Updated   int
-	Error     string
-	StartedAt time.Time
-	EndedAt   time.Time
+	StorageID string    `json:"storage_id"`
+	State     string    `json:"state"`
+	Scanned   int       `json:"scanned"`
+	Total     int       `json:"total"`
+	Images    int       `json:"images"`
+	Videos    int       `json:"videos"`
+	Audio     int       `json:"audio"`
+	Updated   int       `json:"updated"`
+	Error     string    `json:"error,omitempty"`
+	StartedAt time.Time `json:"started_at,omitempty"`
+	EndedAt   time.Time `json:"ended_at,omitempty"`
+}
+
+func (j JobStatus) Percent() int {
+	if j.Total <= 0 {
+		return 0
+	}
+	p := j.Scanned * 100 / j.Total
+	if p > 100 {
+		return 100
+	}
+	if p < 0 {
+		return 0
+	}
+	return p
 }
 
 type Indexer struct {
@@ -43,28 +61,26 @@ type Indexer struct {
 	mu      sync.RWMutex
 	jobs    map[string]JobStatus
 	pending map[string]bool
+	ffmpeg  string
 }
 
 func NewIndexer(catalog *Catalog, manager *storage.Manager, logger *slog.Logger) *Indexer {
-	i := &Indexer{
-		catalog: catalog,
-		manager: manager,
-		logger:  logger,
-		queue:   make(chan string, 16),
-		stop:    make(chan struct{}),
-		jobs:    make(map[string]JobStatus),
-		pending: make(map[string]bool),
+	ffmpeg, _ := exec.LookPath("ffmpeg")
+	i := &Indexer{catalog: catalog, manager: manager, logger: logger, queue: make(chan string, 16), stop: make(chan struct{}), jobs: make(map[string]JobStatus), pending: make(map[string]bool), ffmpeg: ffmpeg}
+	if ffmpeg != "" {
+		logger.Info("FFmpeg detectado; se generarán miniaturas de video cuando sea posible", "path", ffmpeg)
 	}
 	go i.worker()
 	return i
 }
 
-func (i *Indexer) Close() { i.once.Do(func() { close(i.stop) }) }
+func (i *Indexer) Close()                { i.once.Do(func() { close(i.stop) }) }
+func (i *Indexer) FFmpegAvailable() bool { return i.ffmpeg != "" }
 
 func (i *Indexer) Enqueue(storageID string) bool {
 	i.mu.Lock()
 	if job, ok := i.jobs[storageID]; ok {
-		if job.State == "scanning" {
+		if job.State == "scanning" || job.State == "counting" {
 			i.pending[storageID] = true
 			i.mu.Unlock()
 			return true
@@ -80,12 +96,7 @@ func (i *Indexer) Enqueue(storageID string) bool {
 	case i.queue <- storageID:
 		return true
 	default:
-		i.mu.Lock()
-		job := i.jobs[storageID]
-		job.State = "error"
-		job.Error = "cola de indexación llena"
-		i.jobs[storageID] = job
-		i.mu.Unlock()
+		i.setJob(storageID, func(job *JobStatus) { job.State = "error"; job.Error = "cola de indexación llena" })
 		return false
 	}
 }
@@ -94,6 +105,15 @@ func (i *Indexer) Status(storageID string) JobStatus {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 	return i.jobs[storageID]
+}
+func (i *Indexer) Statuses() []JobStatus {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+	out := make([]JobStatus, 0, len(i.jobs))
+	for _, job := range i.jobs {
+		out = append(out, job)
+	}
+	return out
 }
 
 func (i *Indexer) worker() {
@@ -125,9 +145,7 @@ func (i *Indexer) scan(storageID string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	i.setJob(storageID, func(job *JobStatus) {
-		job.State = "scanning"
-		job.StartedAt = time.Now().UTC()
-		job.Error = ""
+		*job = JobStatus{StorageID: storageID, State: "counting", StartedAt: time.Now().UTC()}
 	})
 	lease, err := i.manager.Acquire(ctx, storageID, false)
 	if err != nil {
@@ -135,6 +153,13 @@ func (i *Indexer) scan(storageID string) {
 		return
 	}
 	defer lease.Release()
+
+	total, err := countIndexableFiles(ctx, lease.Root)
+	if err != nil {
+		i.failJob(storageID, err)
+		return
+	}
+	i.setJob(storageID, func(job *JobStatus) { job.State = "scanning"; job.Total = total })
 
 	previous := i.catalog.FilesByStorage(storageID)
 	previousByID := make(map[string]File, len(previous))
@@ -154,7 +179,7 @@ func (i *Indexer) scan(storageID string) {
 		return nil
 	}
 
-	err = filepath.WalkDir(lease.Root, func(path string, entry fs.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(lease.Root, func(source string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			if errors.Is(walkErr, os.ErrPermission) {
 				return nil
@@ -164,52 +189,42 @@ func (i *Indexer) scan(storageID string) {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if entry.Type()&os.ModeSymlink != 0 {
+		if shouldSkipEntry(lease.Root, source, entry) {
 			if entry.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 		if entry.IsDir() {
-			name := entry.Name()
-			if path != lease.Root && (name == "$RECYCLE.BIN" || name == "System Volume Information" || name == ".Trash-1000") {
-				return filepath.SkipDir
-			}
 			return nil
 		}
 		info, err := entry.Info()
 		if err != nil || !info.Mode().IsRegular() {
 			return nil
 		}
-		rel, err := filepath.Rel(lease.Root, path)
+		rel, err := filepath.Rel(lease.Root, source)
 		if err != nil {
 			return nil
 		}
 		id := StableID(storageID, rel)
 		seen[id] = struct{}{}
-		kind, mimeType := classify(path)
+		kind, mimeType := classify(source)
 		old, existed := previousByID[id]
-		if existed && old.Kind == "image" && kind != "image" {
-			_ = os.Remove(i.catalog.CachePath(old.ID, "thumbnail"))
-			_ = os.Remove(i.catalog.CachePath(old.ID, "preview"))
+		if existed && (old.Kind != kind || old.Size != info.Size() || !old.ModTime.Equal(info.ModTime().UTC())) {
+			i.removeCache(old)
 		}
-		file := File{
-			ID:           id,
-			StorageID:    storageID,
-			VirtualRoot:  lease.Volume.VirtualRoot,
-			RelativePath: filepath.ToSlash(rel),
-			Name:         info.Name(),
-			Kind:         kind,
-			MIME:         mimeType,
-			Size:         info.Size(),
-			ModTime:      info.ModTime().UTC(),
-		}
-		if kind == "image" {
+		file := File{ID: id, StorageID: storageID, VirtualRoot: lease.Volume.VirtualRoot, RelativePath: filepath.ToSlash(rel), Name: info.Name(), Kind: kind, MIME: mimeType, Size: info.Size(), ModTime: info.ModTime().UTC()}
+		unchanged := existed && old.Size == info.Size() && old.ModTime.Equal(info.ModTime().UTC()) && old.Kind == kind
+		switch kind {
+		case "image":
 			i.setJob(storageID, func(job *JobStatus) { job.Images++ })
-			unchanged := existed && old.Size == info.Size() && old.ModTime.Equal(info.ModTime().UTC())
-			width, height, thumb, preview := i.ensureImageCache(path, id, unchanged)
-			file.Width, file.Height = width, height
-			file.Thumbnail, file.Preview = thumb, preview
+			file.Width, file.Height, file.Thumbnail, file.Preview = i.ensureImageCache(source, id, unchanged)
+		case "video":
+			i.setJob(storageID, func(job *JobStatus) { job.Videos++ })
+			file.Thumbnail = i.ensureFFmpegThumbnail(ctx, source, id, unchanged, false)
+		case "audio":
+			i.setJob(storageID, func(job *JobStatus) { job.Audio++ })
+			file.Thumbnail = i.ensureFFmpegThumbnail(ctx, source, id, unchanged, true)
 		}
 		batch = append(batch, file)
 		i.setJob(storageID, func(job *JobStatus) { job.Scanned++; job.Updated++ })
@@ -229,8 +244,7 @@ func (i *Indexer) scan(storageID string) {
 	for _, old := range previous {
 		if _, ok := seen[old.ID]; !ok {
 			deleted = append(deleted, old.ID)
-			_ = os.Remove(i.catalog.CachePath(old.ID, "thumbnail"))
-			_ = os.Remove(i.catalog.CachePath(old.ID, "preview"))
+			i.removeCache(old)
 		}
 	}
 	if err := i.catalog.DeleteIDs(ctx, deleted); err != nil {
@@ -242,10 +256,99 @@ func (i *Indexer) scan(storageID string) {
 			i.logger.Warn("no se pudo compactar catálogo", "error", err)
 		}
 	}
-	i.setJob(storageID, func(job *JobStatus) {
-		job.State = "done"
-		job.EndedAt = time.Now().UTC()
+	i.setJob(storageID, func(job *JobStatus) { job.State = "done"; job.Scanned = job.Total; job.EndedAt = time.Now().UTC() })
+}
+
+func countIndexableFiles(ctx context.Context, root string) (int, error) {
+	count := 0
+	err := filepath.WalkDir(root, func(source string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if errors.Is(walkErr, os.ErrPermission) {
+				return nil
+			}
+			return walkErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if shouldSkipEntry(root, source, entry) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err == nil && info.Mode().IsRegular() {
+			count++
+		}
+		return nil
 	})
+	return count, err
+}
+
+func shouldSkipEntry(root, source string, entry fs.DirEntry) bool {
+	if entry.Type()&os.ModeSymlink != 0 {
+		return true
+	}
+	if !entry.IsDir() || source == root {
+		return false
+	}
+	switch strings.ToLower(entry.Name()) {
+	case "$recycle.bin", "system volume information", ".trash-1000", "lost+found":
+		return true
+	}
+	return false
+}
+
+func (i *Indexer) removeCache(file File) {
+	_ = os.Remove(i.catalog.CachePath(file.ID, "thumbnail"))
+	_ = os.Remove(i.catalog.CachePath(file.ID, "preview"))
+}
+
+func (i *Indexer) ensureFFmpegThumbnail(ctx context.Context, source, id string, unchanged, audio bool) bool {
+	if i.ffmpeg == "" {
+		return false
+	}
+	destination := i.catalog.CachePath(id, "thumbnail")
+	if unchanged {
+		if info, err := os.Stat(destination); err == nil && info.Size() > 0 {
+			return true
+		}
+	} else {
+		_ = os.Remove(destination)
+	}
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		return false
+	}
+	tmp := destination + ".tmp.jpg"
+	_ = os.Remove(tmp)
+	var args []string
+	if audio {
+		args = []string{"-hide_banner", "-loglevel", "error", "-y", "-i", source, "-map", "0:v:0", "-frames:v", "1", "-vf", "scale=640:640:force_original_aspect_ratio=decrease", tmp}
+	} else {
+		args = []string{"-hide_banner", "-loglevel", "error", "-y", "-ss", "1", "-i", source, "-frames:v", "1", "-vf", "scale=640:640:force_original_aspect_ratio=decrease", tmp}
+	}
+	cmdCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(cmdCtx, i.ffmpeg, args...)
+	if err := cmd.Run(); err != nil {
+		_ = os.Remove(tmp)
+		return false
+	}
+	info, err := os.Stat(tmp)
+	if err != nil || info.Size() == 0 {
+		_ = os.Remove(tmp)
+		return false
+	}
+	_ = os.Remove(destination)
+	if err := os.Rename(tmp, destination); err != nil {
+		_ = os.Remove(tmp)
+		return false
+	}
+	return true
 }
 
 func (i *Indexer) ensureImageCache(source, id string, unchanged bool) (int, int, bool, bool) {
@@ -254,8 +357,8 @@ func (i *Indexer) ensureImageCache(source, id string, unchanged bool) (int, int,
 	if unchanged {
 		if info, err := os.Stat(thumbPath); err == nil && info.Size() > 0 {
 			if pinfo, err := os.Stat(previewPath); err == nil && pinfo.Size() > 0 {
-				if width, height := imageDimensions(source); width > 0 {
-					return width, height, true, true
+				if w, h := imageDimensions(source); w > 0 {
+					return w, h, true, true
 				}
 			}
 		}
@@ -270,7 +373,7 @@ func (i *Indexer) ensureImageCache(source, id string, unchanged bool) (int, int,
 	config, _, err := image.DecodeConfig(file)
 	_ = file.Close()
 	if err != nil || config.Width <= 0 || config.Height <= 0 {
-		return 0, 0, false, false
+		return i.ensureFFmpegImageCache(source, id, unchanged)
 	}
 	if int64(config.Width) > maxThumbnailSourcePixels/int64(config.Height) {
 		return config.Width, config.Height, false, false
@@ -284,11 +387,69 @@ func (i *Indexer) ensureImageCache(source, id string, unchanged bool) (int, int,
 	if err != nil {
 		return config.Width, config.Height, false, false
 	}
-	bounds := img.Bounds()
-	width, height := bounds.Dx(), bounds.Dy()
-	thumbOK := writeScaledJPEG(img, thumbPath, 320, 82) == nil
-	previewOK := writeScaledJPEG(img, previewPath, 1600, 88) == nil
-	return width, height, thumbOK, previewOK
+	b := img.Bounds()
+	w, h := b.Dx(), b.Dy()
+	return w, h, writeScaledJPEG(img, thumbPath, 320, 82) == nil, writeScaledJPEG(img, previewPath, 1600, 88) == nil
+}
+
+func (i *Indexer) ensureFFmpegImageCache(source, id string, unchanged bool) (int, int, bool, bool) {
+	if i.ffmpeg == "" {
+		return 0, 0, false, false
+	}
+	thumbPath := i.catalog.CachePath(id, "thumbnail")
+	previewPath := i.catalog.CachePath(id, "preview")
+	if unchanged {
+		thumbOK := fileExistsNonEmpty(thumbPath)
+		previewOK := fileExistsNonEmpty(previewPath)
+		if thumbOK && previewOK {
+			return 0, 0, true, true
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(previewPath), 0o700); err != nil {
+		return 0, 0, false, false
+	}
+	tmpPreview := previewPath + ".tmp.jpg"
+	_ = os.Remove(tmpPreview)
+	cmdCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(cmdCtx, i.ffmpeg,
+		"-hide_banner", "-loglevel", "error", "-y",
+		"-i", source, "-frames:v", "1",
+		"-vf", "scale=1600:1600:force_original_aspect_ratio=decrease",
+		tmpPreview,
+	)
+	if err := cmd.Run(); err != nil || !fileExistsNonEmpty(tmpPreview) {
+		_ = os.Remove(tmpPreview)
+		return 0, 0, false, false
+	}
+	previewFile, err := os.Open(tmpPreview)
+	if err != nil {
+		_ = os.Remove(tmpPreview)
+		return 0, 0, false, false
+	}
+	img, _, err := image.Decode(previewFile)
+	_ = previewFile.Close()
+	if err != nil {
+		_ = os.Remove(tmpPreview)
+		return 0, 0, false, false
+	}
+	b := img.Bounds()
+	w, h := b.Dx(), b.Dy()
+	if err := writeScaledJPEG(img, thumbPath, 320, 82); err != nil {
+		_ = os.Remove(tmpPreview)
+		return w, h, false, false
+	}
+	_ = os.Remove(previewPath)
+	if err := os.Rename(tmpPreview, previewPath); err != nil {
+		_ = os.Remove(tmpPreview)
+		return w, h, true, false
+	}
+	return w, h, true, true
+}
+
+func fileExistsNonEmpty(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Size() > 0
 }
 
 func imageDimensions(source string) (int, int) {
@@ -297,25 +458,24 @@ func imageDimensions(source string) (int, int) {
 		return 0, 0
 	}
 	defer file.Close()
-	config, _, err := image.DecodeConfig(file)
+	c, _, err := image.DecodeConfig(file)
 	if err != nil {
 		return 0, 0
 	}
-	return config.Width, config.Height
+	return c.Width, c.Height
 }
-
 func writeScaledJPEG(src image.Image, destination string, maxDimension, quality int) error {
-	bounds := src.Bounds()
-	width, height := bounds.Dx(), bounds.Dy()
-	if width <= 0 || height <= 0 {
+	b := src.Bounds()
+	w, h := b.Dx(), b.Dy()
+	if w <= 0 || h <= 0 {
 		return errors.New("imagen sin dimensiones")
 	}
-	targetW, targetH := fitDimensions(width, height, maxDimension)
-	dst := image.NewRGBA(image.Rect(0, 0, targetW, targetH))
-	for y := 0; y < targetH; y++ {
-		sy := bounds.Min.Y + y*height/targetH
-		for x := 0; x < targetW; x++ {
-			sx := bounds.Min.X + x*width/targetW
+	tw, th := fitDimensions(w, h, maxDimension)
+	dst := image.NewRGBA(image.Rect(0, 0, tw, th))
+	for y := 0; y < th; y++ {
+		sy := b.Min.Y + y*h/th
+		for x := 0; x < tw; x++ {
+			sx := b.Min.X + x*w/tw
 			dst.Set(x, y, src.At(sx, sy))
 		}
 	}
@@ -338,25 +498,22 @@ func writeScaledJPEG(src image.Image, destination string, maxDimension, quality 
 	_ = os.Remove(destination)
 	return os.Rename(name, destination)
 }
-
-func fitDimensions(width, height, maxDimension int) (int, int) {
-	if width <= maxDimension && height <= maxDimension {
-		return width, height
+func fitDimensions(w, h, max int) (int, int) {
+	if w <= max && h <= max {
+		return w, h
 	}
-	if width >= height {
-		targetW := maxDimension
-		targetH := height * maxDimension / width
-		if targetH < 1 {
-			targetH = 1
+	if w >= h {
+		th := h * max / w
+		if th < 1 {
+			th = 1
 		}
-		return targetW, targetH
+		return max, th
 	}
-	targetH := maxDimension
-	targetW := width * maxDimension / height
-	if targetW < 1 {
-		targetW = 1
+	tw := w * max / h
+	if tw < 1 {
+		tw = 1
 	}
-	return targetW, targetH
+	return tw, max
 }
 
 func classify(path string) (string, string) {
@@ -368,9 +525,9 @@ func classify(path string) (string, string) {
 	switch ext {
 	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif", ".avif", ".dng", ".cr2", ".nef", ".arw":
 		return "image", mimeType
-	case ".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v":
+	case ".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".mts", ".m2ts":
 		return "video", mimeType
-	case ".mp3", ".flac", ".wav", ".m4a", ".ogg", ".opus", ".aac":
+	case ".mp3", ".flac", ".wav", ".m4a", ".ogg", ".opus", ".aac", ".wma":
 		return "audio", mimeType
 	case ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".md", ".odt", ".ods":
 		return "document", mimeType
@@ -380,7 +537,6 @@ func classify(path string) (string, string) {
 		return "other", mimeType
 	}
 }
-
 func (i *Indexer) setJob(storageID string, update func(*JobStatus)) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
@@ -389,7 +545,6 @@ func (i *Indexer) setJob(storageID string, update func(*JobStatus)) {
 	update(&job)
 	i.jobs[storageID] = job
 }
-
 func (i *Indexer) failJob(storageID string, err error) {
 	i.logger.Warn("indexación fallida", "storage_id", storageID, "error", err)
 	i.setJob(storageID, func(job *JobStatus) {

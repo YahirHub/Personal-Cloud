@@ -45,3 +45,20 @@ func TestIndexerMarksPendingWhenStorageChangesDuringScan(t *testing.T) {
 		t.Fatal("no se marcó segunda pasada")
 	}
 }
+
+func TestJobStatusPercentUsesRealProgress(t *testing.T) {
+	cases := []struct {
+		job  JobStatus
+		want int
+	}{
+		{JobStatus{State: "counting"}, 0},
+		{JobStatus{State: "scanning", Scanned: 25, Total: 100}, 25},
+		{JobStatus{State: "scanning", Scanned: 150, Total: 100}, 100},
+		{JobStatus{State: "done", Scanned: 100, Total: 100}, 100},
+	}
+	for _, tc := range cases {
+		if got := tc.job.Percent(); got != tc.want {
+			t.Fatalf("Percent(%+v)=%d want=%d", tc.job, got, tc.want)
+		}
+	}
+}

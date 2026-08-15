@@ -125,7 +125,7 @@ func (m *Manager) Views(ctx context.Context) ([]View, error) {
 		view := m.viewFrom(cfg, detected, online)
 		views = append(views, view)
 		if online && storageIdentityChanged(cfg, detected) {
-			_ = m.store.RefreshStorageVolumeDevice(ctx, cfg.ID, detected.Device, detected.VolumeName, detected.MountPoint, detected.FSType, detected.Label)
+			_ = m.store.RefreshStorageVolumeDevice(ctx, cfg.ID, detected.Device, detected.VolumeName, detected.MountPoint, detected.FSType, detected.Label, detected.HardwareID)
 		}
 	}
 	for _, detected := range discovered {
@@ -137,6 +137,7 @@ func (m *Manager) Views(ctx context.Context) ([]View, error) {
 		}
 		views = append(views, View{
 			PersistentID:   detected.PersistentID,
+			HardwareID:     detected.HardwareID,
 			IdentityStable: detected.IdentityStable,
 			Name:           detected.Name,
 			Label:          detected.Label,
@@ -200,6 +201,7 @@ func (m *Manager) Register(ctx context.Context, input RegisterInput) (store.Stor
 	}
 	created, err := m.store.RegisterStorageVolume(ctx, store.RegisterVolumeInput{
 		PersistentID:        detected.PersistentID,
+		HardwareID:          detected.HardwareID,
 		IdentityStable:      detected.IdentityStable,
 		Name:                input.Name,
 		Label:               detected.Label,
@@ -238,6 +240,7 @@ func (m *Manager) Update(ctx context.Context, id string, input RegisterInput) (s
 	}
 	return m.store.UpdateStorageVolume(ctx, id, store.RegisterVolumeInput{
 		PersistentID:        current.PersistentID,
+		HardwareID:          current.HardwareID,
 		IdentityStable:      current.IdentityStable,
 		Name:                input.Name,
 		Label:               current.Label,
@@ -405,6 +408,7 @@ func (m *Manager) viewFrom(cfg store.StorageVolume, detected DiscoveredVolume, o
 	return View{
 		ID:                 cfg.ID,
 		PersistentID:       cfg.PersistentID,
+		HardwareID:         firstNonEmpty(detected.HardwareID, cfg.HardwareID),
 		IdentityStable:     cfg.IdentityStable,
 		Name:               cfg.Name,
 		Label:              cfg.Label,
@@ -556,4 +560,13 @@ func storageIdentityChanged(cfg store.StorageVolume, detected DiscoveredVolume) 
 		return true
 	}
 	return false
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }

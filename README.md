@@ -14,17 +14,20 @@ Implementado:
 - CSRF y rate limit reutilizable.
 - Rate limit de login por IP y usuario.
 - URLs amigables y frontend con layout/componentes reutilizables.
-- Detección de volúmenes Windows y Linux con identidad persistente.
+- Detección de volúmenes Windows y Linux con identidad persistente independiente de letra, nombre o punto de montaje.
+- Windows conserva Volume GUID + serial del filesystem; Linux prioriza UUID y conserva PARTUUID/by-id como respaldo de identidad.
 - Registro de unidades con nombre, categoría, raíz virtual, solo lectura y timeout de inactividad.
 - VFS que unifica todas las unidades registradas sin exponer rutas físicas.
 - Montaje bajo demanda y leases para impedir desmontajes durante operaciones activas.
 - Auto-desmontaje por inactividad.
 - Catálogo persistente separado del estado de autenticación.
-- Indexación de archivos con una sola cola para minimizar actividad simultánea sobre HDD.
-- Miniaturas de hasta 320 px y previews de hasta 1600 px para JPEG/PNG/GIF.
-- Galería `/fotos` que usa la caché interna aunque el disco original esté desmontado.
+- Indexación de archivos con una sola cola para minimizar actividad simultánea sobre HDD y progreso real procesados/total en tiempo real.
+- Miniaturas de hasta 320 px y previews de hasta 1600 px para JPEG/PNG/GIF; FFmpeg amplía formatos de imagen y genera portadas multimedia cuando está disponible.
+- Galería `/galeria` que usa la caché interna aunque el disco original esté desmontado.
+- Visor offline de imagen/video/audio con navegación ←/→ o A/D y zoom suave W/S.
+- Scroll infinito por defecto o paginación persistente mediante un componente de listado reutilizable.
 - Apertura del original mediante montaje bajo demanda.
-- Upload web directo a una unidad registrada.
+- Upload contextual mediante botón/widget dentro de la carpeta actual de `/archivos/ver/...`.
 - Registro de unidad con primera indexación automática y reindexación manual visible.
 - Explorador `/archivos` basado en el catálogo, usable aunque una unidad esté desmontada o desconectada.
 - Upload con destino automático según tipo de archivo, categoría de unidad y espacio libre conocido.
@@ -33,12 +36,13 @@ Implementado:
 - TLS directo opcional o despliegue detrás de proxy HTTPS.
 - Healthcheck `/salud`.
 - Backups diarios de metadatos con retención de siete copias.
+- Frontend y todos sus iconos/JS/CSS embebidos funcionan offline, sin CDN.
+- Elevación automática: UAC en Windows y `sudo` interactivo en Linux cuando el proceso necesita permisos de volumen y no los tiene.
 - Build Linux y Windows/amd64 sin CGO y sin módulos Go externos.
 
-Pendientes deliberados:
+Pendiente deliberado:
 
-- thumbnails para HEIC/HEIF/AVIF/WebP/RAW y portadas de video;
-- evaluación posterior de SMB.
+- evaluación posterior de SMB; WebDAV sigue siendo el protocolo de archivos remoto estable de esta etapa.
 
 Consulta `tareas/` y `contexto/` para el estado técnico completo.
 
@@ -96,23 +100,22 @@ go test ./...
 go vet ./...
 ```
 
-Windows CMD:
+Scripts de prueba incluidos:
 
 ```bat
-scripts\deps.cmd
 scripts\test.cmd
 ```
+
+```bash
+./scripts/test.sh
+```
+
+La carpeta `scripts/` se reserva para scripts de validación/repetición útil del proyecto; no se incluyen scripts de limpieza residual.
 
 ## Ejecutar
 
 ```bash
 go run ./cmd/server
-```
-
-Windows CMD:
-
-```bat
-scripts\run.cmd
 ```
 
 Por defecto escucha en `:8080`.
@@ -143,7 +146,7 @@ La pantalla separa unidades registradas de volúmenes detectados.
 
 ### Identidad de volúmenes
 
-Linux usa UUID de `/dev/disk/by-uuid` y Windows usa Volume GUID. No se guarda `/dev/sdb` o `E:` como identidad principal porque esos nombres pueden cambiar.
+Linux prioriza UUID de `/dev/disk/by-uuid`; si no existe, usa PARTUUID y además registra un identificador físico de `/dev/disk/by-id` cuando está disponible. Windows usa el Volume GUID como identidad primaria y registra el serial del filesystem como dato auxiliar. No se guarda `/dev/sdb` o `E:` como identidad principal porque esos nombres pueden cambiar.
 
 El servidor tampoco asume que todo USB será reportado como `removable`: HDD/SSD USB pueden presentarse como unidades fijas. Por eso se enumeran volúmenes locales aptos, se excluyen los recursos del sistema y el administrador decide cuáles registrar.
 
@@ -177,15 +180,15 @@ flush
 
 Si el volumen está ocupado y no puede bloquearse, la operación falla en lugar de forzar el desmontaje.
 
-Las operaciones de montaje/desmontaje normalmente requieren ejecutar el proceso con privilegios elevados.
+Las operaciones de montaje/desmontaje normalmente requieren privilegios elevados. Si el proceso Windows no está elevado, Personal Cloud intenta relanzarse una única vez mediante UAC conservando sus argumentos y directorio de trabajo. La asignación/retiro del punto de montaje usa las APIs Win32 de volumen en vez de depender de `mountvol.exe`.
 
 ### Linux
 
 Se leen los montajes desde `/proc/self/mountinfo`. Los mountpoints críticos (`/`, `/boot`, `/boot/efi`, `/usr`, `/var`) y el dispositivo base del root filesystem no pueden registrarse desde la UI.
 
-Montar filesystems requiere privilegios. El ejemplo systemd concede `CAP_SYS_ADMIN` al usuario dedicado y acceso al grupo `disk`; revisa esa política para tu distribución.
+Montar filesystems requiere privilegios. En una ejecución interactiva sin privilegios, Personal Cloud intenta relanzarse con `sudo` si está disponible. En systemd detecta `CAP_SYS_ADMIN` y no intenta `sudo`; el ejemplo de servicio concede esa capacidad al usuario dedicado y acceso al grupo `disk`.
 
-## Catálogo y fotos
+## Catálogo y Galería
 
 Los metadatos viven en:
 
@@ -207,7 +210,7 @@ Se dejó una deuda técnica explícita: si el catálogo supera aproximadamente 5
 
 ### Indexación
 
-Al registrar una unidad desde `/almacenamiento`, el servidor inicia la primera indexación automáticamente. La tarjeta registrada muestra **Indexar ahora** para reconciliar cambios hechos fuera de Personal Cloud. Mientras el trabajo está en cola o escaneando, la pantalla actualiza el estado automáticamente.
+Al registrar una unidad desde `/almacenamiento`, el servidor inicia la primera indexación automáticamente. La tarjeta registrada muestra **Indexar ahora** para reconciliar cambios hechos fuera de Personal Cloud. El indexador hace una pasada de conteo y otra de procesamiento para mostrar una barra real `procesados / total`; `/api/indexacion` actualiza cada tarjeta en tiempo real mientras está en cola, contando o procesando.
 
 El indexador:
 
@@ -234,7 +237,9 @@ La raíz muestra las unidades como carpetas virtuales. Dentro de cada una, la je
 
 Al abrir un archivo se solicita el original al VFS, que monta solamente su unidad durante la lectura.
 
-Desde la raíz de `/archivos`, la subida usa destino automático:
+La subida ya no ocupa una tarjeta grande en `/almacenamiento`. Al entrar en una carpeta concreta (`/archivos/ver/<raíz>/...`) aparece un botón **Subir aquí** que abre un diálogo compacto y escribe en esa ubicación.
+
+Cuando no se fuerza un destino, el routing usa:
 
 - imágenes: `Fotos` → `Multimedia` → `Mixto`;
 - video/audio: `Multimedia` → `Mixto`;
@@ -243,11 +248,35 @@ Desde la raíz de `/archivos`, la subida usa destino automático:
 
 Si navegas dentro de una raíz virtual, la subida se dirige explícitamente a esa unidad y sigue aplicando su política de tipos. Después de cada subida se encola la reindexación correspondiente.
 
-### Formatos actuales de preview
+### Galería, visor y formatos multimedia
 
-JPEG, PNG y GIF generan miniatura/preview usando únicamente la biblioteca estándar. Para proteger el MiniPC frente a imágenes que disparen el uso de RAM, una fuente de más de 80 megapíxeles se cataloga pero no se decodifica para thumbnail en esta etapa.
+Abre `/galeria`. La ruta histórica `/fotos` redirige permanentemente a la Galería. Los assets del visor son locales/embebidos: no requiere CDN ni Internet.
 
-HEIC, HEIF, AVIF, WebP y formatos RAW se reconocen como imágenes dentro del catálogo, pero pueden aparecer sin thumbnail hasta implementar la tarea 07. Los videos todavía no generan portada.
+Controles del visor:
+
+- `←` / `→` o `A` / `D`: medio anterior/siguiente;
+- `W` / `S`: zoom suave de la imagen/video visible;
+- `Esc`: cerrar;
+- video y audio usan los controles HTML5 nativos.
+
+JPEG, PNG y GIF generan miniatura/preview usando únicamente la biblioteca estándar. Para proteger el MiniPC frente a imágenes que disparen el uso de RAM, una fuente que el decoder nativo identifica con más de 80 megapíxeles se cataloga pero no se decodifica para thumbnail.
+
+FFmpeg es **opcional** y se detecta automáticamente en `PATH`. Cuando existe, Personal Cloud intenta usarlo para:
+
+- generar previews JPEG de imágenes que la biblioteca estándar no decodifica (por ejemplo WebP/HEIC/HEIF/AVIF/RAW si ese build de FFmpeg soporta el codec);
+- extraer un frame representativo de video;
+- extraer la carátula embebida de audio cuando exista.
+
+Sin FFmpeg el servidor sigue funcionando; únicamente faltarán esas miniaturas.
+
+### Listado reutilizable
+
+Galería y Archivos comparten dos modos:
+
+- **Continuo** (`infinito`): predeterminado; carga automáticamente más elementos al acercarse al final mediante `IntersectionObserver`;
+- **Páginas**: navegación anterior/siguiente.
+
+La preferencia se guarda en una cookie local del navegador y el componente se reutiliza en ambas vistas.
 
 ## WebDAV
 
@@ -468,32 +497,33 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o b
 - WebDAV remoto requiere HTTPS por defecto.
 - La aplicación no fuerza un dismount Windows si no consigue un lock exclusivo.
 
-## Prueba manual recomendada de R5
+## Prueba manual recomendada de R7
 
 ### Núcleo
 
-1. Conserva tu `data/` actual de R4 y arranca R5.
+1. Conserva tu `data/` actual y arranca R7; el estado existente se mantiene compatible.
 2. Confirma que tu cuenta y onboarding siguen presentes.
-3. Comprueba `/inicio`, `/almacenamiento`, `/fotos` y `/salud`.
+3. Comprueba `/inicio`, `/almacenamiento`, `/galeria`, `/archivos` y `/salud`.
 
 ### Unidad física
 
 1. Conecta un USB/HDD/SSD que **no** sea del sistema.
 2. Abre `/almacenamiento` y verifica que aparezca como detectado.
 3. Regístralo, por ejemplo como `Fotos`, raíz `Fotos` y timeout 60 segundos.
-4. Pulsa `Indexar`.
-5. Comprueba que aparecen las imágenes en `/fotos`.
+4. Observa la barra de progreso hasta que llegue al 100 %.
+5. Comprueba que imágenes/videos/audio aparecen en `/galeria`.
 6. Espera el timeout y verifica que la unidad pase a desmontada.
-7. Recarga `/fotos`: las miniaturas deben seguir cargando desde el almacenamiento interno.
+7. Recarga `/galeria`: las miniaturas deben seguir cargando desde el almacenamiento interno.
 8. Abre un original: la unidad debe montarse bajo demanda.
 9. Cierra la transferencia y comprueba que vuelve a desmontarse después del timeout.
 
 ### Upload
 
-1. En `/almacenamiento`, selecciona la unidad registrada.
-2. Sube un archivo compatible con su categoría.
-3. Verifica que un tipo incompatible sea rechazado.
-4. Reindexa o espera la reindexación encolada tras una subida correcta.
+1. Entra a `/archivos/ver/<raíz>` o una subcarpeta.
+2. Pulsa **Subir aquí** y verifica que aparezca el diálogo compacto.
+3. Sube un archivo compatible con la política de la unidad.
+4. Verifica que un tipo incompatible sea rechazado.
+5. Comprueba que la reindexación se encola automáticamente.
 
 ### WebDAV
 
