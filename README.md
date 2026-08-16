@@ -31,10 +31,10 @@ Implementado:
 - Catálogo persistente separado del estado de autenticación.
 - Indexación de archivos con una sola cola para minimizar actividad simultánea sobre HDD y progreso real procesados/total en tiempo real.
 - Miniaturas de hasta 320 px y previews de hasta 1600 px para JPEG/PNG/GIF; se respeta EXIF Orientation y FFmpeg amplía formatos de imagen cuando está disponible. La caché de imágenes está versionada y las miniaturas antiguas se regeneran de forma perezosa al primer acceso, evitando que el navegador conserve una orientación obsoleta.
-- Galería `/galeria` que usa la caché interna aunque el disco original esté desmontado y oculta medios de unidades físicamente desconectadas.
+- Galería `/galeria` que usa la caché interna aunque el disco original esté desmontado y oculta medios de unidades físicamente desconectadas. El mismo visor multimedia es global: imágenes, video y audio se abren con ese reproductor desde Inicio, Mi unidad, búsqueda, Recientes, Destacados y `⋯ → Abrir`.
 - Filtro compacto por imágenes/video/audio y orden por fecha de archivo, fecha de incorporación o nombre.
 - Visor offline de imagen/video/audio centrado a viewport completo, con navegación ←/→ o A/D, zoom suave W/S y reproductor de video con controles inferiores propios (play, seek, volumen, velocidad, calidad y fullscreen).
-- Visores locales para **Markdown, HTML, TXT y PDF** integrados en la interfaz: Markdown se renderiza sin librerías externas, HTML se muestra en un iframe aislado con scripts/red/formularios bloqueados y PDF usa el visor nativo del navegador con soporte de rangos. Markdown/HTML/TXT se pueden editar y guardar desde el navegador con `Ctrl+S`, control de conflictos y límite de 8 MiB; todos los visores incluyen descarga segura y Destacados.
+- Visores locales para **Markdown, HTML, texto/código UTF-8 y PDF** integrados en la interfaz: Markdown se renderiza sin librerías externas, HTML se muestra en un iframe aislado con scripts/red/formularios bloqueados y PDF usa el visor nativo del navegador con soporte de rangos. Texto incluye TXT y formatos compatibles como JSON/YAML/TOML/XML/CSV, código fuente y scripts; se pueden editar y guardar desde el navegador con `Ctrl+S`, control de conflictos y límite de 8 MiB. Todos los visores incluyen descarga segura y Destacados.
 - Preferencias locales persistentes del reproductor de video: mute, volumen y velocidad.
 - Calidad de video **Auto**/Original/360p/480p/720p/1080p cuando FFmpeg + libx264 están disponibles; Auto mide una muestra de la ruta real, considera el tamaño del visor y aplica margen de seguridad para elegir resolución. Las variantes se generan bajo demanda y se cachean localmente.
 - Descarga por clic derecho mediante ticket AES-GCM opaco, ligado al usuario y de vida corta; las URLs no revelan ruta, storage ID ni nombre del archivo.
@@ -285,6 +285,8 @@ Cada sincronización informa cuántos archivos fueron agregados, modificados y r
 ### Galería, visor y formatos multimedia
 
 Abre `/galeria`. La ruta histórica `/fotos` redirige permanentemente a la Galería. Los assets del visor son locales/embebidos: no requiere CDN ni Internet. Una prueba automatizada recorre todos los HTML/CSS/JS embebidos y falla si aparece una referencia remota HTTP/HTTPS o un recurso protocol-relative.
+
+El reproductor no pertenece a la página Galería: se monta globalmente en el layout autenticado y se reutiliza para cualquier imagen, video o audio visualizable desde Página principal, Mi unidad, resultados de búsqueda, Recientes, Destacados y el menú de archivo. Fuera de Galería, anterior/siguiente recorre los medios visualizables presentes en la vista actual.
 
 Controles del visor:
 

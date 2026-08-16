@@ -260,6 +260,7 @@ code { border-radius: 7px; background: var(--surface-2); padding: 2px 6px; }
 .viewer-audio { display:grid; align-content:center; justify-items:center; gap:24px; width:min(680px,90vw); min-height:100%; padding:80px 24px; }
 .viewer-audio img { width:min(520px,78vw); height:min(520px,58vh); border-radius:18px; object-fit:contain; }
 .viewer-audio audio { width:100%; }
+.viewer-media-error { max-width:min(560px,84vw); padding:18px 22px; border:1px solid rgba(255,255,255,.18); border-radius:14px; background:rgba(0,0,0,.56); color:#f1f3f4; text-align:center; }
 .viewer-meta { position:absolute; z-index:3; top:0; left:0; right:0; display:flex; justify-content:flex-start; align-items:flex-start; gap:16px; pointer-events:none; padding:16px 104px 58px 20px; background:linear-gradient(rgba(0,0,0,.78),rgba(0,0,0,.36) 52%,transparent); }
 .viewer-meta strong, .viewer-meta small { display:block; max-width:min(72vw,900px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-shadow:0 1px 8px rgba(0,0,0,.9); }
 .viewer-meta small { margin-top:3px; color:#d1d7e0; }

@@ -1,0 +1,33 @@
+{{define "media-viewer"}}
+<dialog class="media-viewer" data-media-viewer>
+  <div class="viewer-shell" data-viewer-shell>
+    <div class="viewer-stage" data-viewer-stage></div>
+    <button class="viewer-star icon-button" type="button" data-viewer-star data-starred="false" aria-label="Agregar a Destacados" title="Agregar a Destacados">{{template "icon-star" .}}</button>
+    <button class="viewer-close icon-button" type="button" data-viewer-close aria-label="Cerrar">{{template "icon-close" .}}</button>
+    <div class="viewer-loading-overlay" data-viewer-loader hidden aria-live="polite" aria-busy="true"><span class="viewer-loading-spinner" aria-hidden="true"></span><strong data-viewer-loading-text>Cargando…</strong></div>
+    <div class="viewer-video-controls" data-video-controls hidden>
+      <div class="viewer-video-progress">
+        <input type="range" min="0" max="1000" value="0" step="0.01" data-video-progress aria-label="Posición del video">
+      </div>
+      <div class="viewer-video-control-row">
+        <button class="video-control-button" type="button" data-video-play aria-label="Reproducir" title="Reproducir">
+          <span data-video-play-icon>{{template "icon-play" .}}</span><span data-video-pause-icon hidden>{{template "icon-pause" .}}</span>
+        </button>
+        <span class="viewer-video-time"><span data-video-current>0:00</span> / <span data-video-duration>0:00</span></span>
+        <button class="video-control-button" type="button" data-video-mute aria-label="Silenciar" title="Silenciar">{{template "icon-volume" .}}</button>
+        <input class="viewer-video-volume" type="range" min="0" max="1" step="0.05" value="1" data-video-volume aria-label="Volumen">
+        <div class="viewer-video-spacer"></div>
+        <label class="viewer-video-speed" title="Velocidad"><span class="sr-only">Velocidad</span><select data-video-speed aria-label="Velocidad de reproducción"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label>
+        <div class="viewer-quality-inline" data-video-quality-control hidden>
+          <select data-video-quality aria-label="Calidad de video" title="Calidad"><option value="original">Original</option></select>
+          <small data-video-quality-status aria-live="polite"></small>
+        </div>
+        <button class="video-control-button" type="button" data-viewer-fullscreen aria-label="Pantalla completa" title="Pantalla completa">{{template "icon-fullscreen" .}}</button>
+      </div>
+    </div>
+    <button class="viewer-nav viewer-prev icon-button" type="button" data-viewer-prev aria-label="Anterior">{{template "icon-prev" .}}</button>
+    <button class="viewer-nav viewer-next icon-button" type="button" data-viewer-next aria-label="Siguiente">{{template "icon-next" .}}</button>
+    <div class="viewer-meta" data-viewer-meta><div><strong data-viewer-title></strong><small data-viewer-help>←/→ o A/D: cambiar · W/S: zoom · F: Destacados · clic derecho: descargar · Esc: cerrar</small></div></div>
+  </div>
+</dialog>
+{{end}}

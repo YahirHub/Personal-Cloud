@@ -483,11 +483,8 @@
   // Abrir con el visor desde Mi unidad, Recientes, Destacados y Página principal.
   document.addEventListener('click', (event) => {
     if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-    if (document.body.classList.contains('selection-mode')) return;
-    if (event.target.closest('button')) return;
-    const anchor = event.target.closest('a');
-    if (!anchor) return;
-    const carrier = anchor.closest('[data-download-file-id]');
+    if (document.body.classList.contains('selection-mode') || event.target.closest('button')) return;
+    const carrier = event.target.closest('[data-download-file-id][data-viewer]');
     const viewer = carrier?.dataset.viewer || '';
     const id = carrier?.dataset.downloadFileId || '';
     if (!id || !['markdown', 'html', 'text', 'pdf'].includes(viewer)) return;

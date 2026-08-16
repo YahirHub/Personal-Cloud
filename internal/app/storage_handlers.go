@@ -604,12 +604,22 @@ func (a *App) fileInfoAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
+	thumbnailURL := ""
+	if file.Thumbnail {
+		thumbnailURL = catalogCacheURL(file, "miniatura")
+	}
+	previewURL := ""
+	if file.Preview {
+		previewURL = catalogCacheURL(file, "vista-previa")
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"id": file.ID, "name": file.Name, "kind": file.Kind, "mime": file.MIME,
 		"size": file.Size, "mod_time": file.ModTime, "indexed_at": file.IndexedAt,
 		"location": location, "storage_name": storageName, "online": online, "starred": starred,
 		"width": file.Width, "height": file.Height, "health": file.Health,
 		"viewer": fileViewerKind(file.Name), "editable": fileViewerEditable(file.Name),
+		"original_url":  "/archivo/" + file.ID + "/original",
+		"thumbnail_url": thumbnailURL, "preview_url": previewURL, "cache_version": file.CacheVersion,
 	})
 }
 

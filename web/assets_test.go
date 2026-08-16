@@ -94,7 +94,7 @@ func TestViewerPredecodesImagesBeforeSwap(t *testing.T) {
 }
 
 func TestGalleryIncludesBottomVideoControls(t *testing.T) {
-	data, err := fs.ReadFile(Assets, "pages/photos.html")
+	data, err := fs.ReadFile(Assets, "components/media_viewer.html")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestQualitySwitchDoesNotUseBlockingLoader(t *testing.T) {
 }
 
 func TestViewerIncludesLocalLoadingOverlay(t *testing.T) {
-	data, err := fs.ReadFile(Assets, "pages/photos.html")
+	data, err := fs.ReadFile(Assets, "components/media_viewer.html")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -328,6 +328,37 @@ func TestDocumentViewerIsEmbeddedAndOffline(t *testing.T) {
 	} {
 		if !strings.Contains(js, expected) {
 			t.Fatalf("comportamiento del visor incompleto; falta %q", expected)
+		}
+	}
+}
+
+func TestMediaViewerIsGlobalAndReusableAcrossListings(t *testing.T) {
+	baseData, err := fs.ReadFile(Assets, "layouts/base.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	componentData, err := fs.ReadFile(Assets, "components/media_viewer.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	jsData, err := fs.ReadFile(Assets, "static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := string(baseData)
+	component := string(componentData)
+	js := string(jsData)
+	if !strings.Contains(base, `{{template "media-viewer" .}}`) {
+		t.Fatal("el visor multimedia debe montarse globalmente desde el layout autenticado")
+	}
+	for _, expected := range []string{"data-media-viewer", "data-viewer-stage", "data-viewer-star", "data-video-controls"} {
+		if !strings.Contains(component, expected) {
+			t.Fatalf("el componente multimedia global no contiene %q", expected)
+		}
+	}
+	for _, expected := range []string{"window.PersonalCloudMediaViewer", "collectPageMediaIDs", "openMediaByID", "[data-download-file-id][data-viewer]"} {
+		if !strings.Contains(js, expected) {
+			t.Fatalf("el visor multimedia no es reutilizable fuera de Galería; falta %q", expected)
 		}
 	}
 }

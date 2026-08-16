@@ -24,12 +24,18 @@ const maxEditableTextBytes int64 = 8 << 20 // 8 MiB: suficiente para documentos 
 // fileViewerKind devuelve el visor local que puede manejar un archivo sin
 // depender de servicios externos. Una cadena vacía conserva la apertura normal.
 func fileViewerKind(name string) string {
+	// Los medios usan el mismo clasificador central del catálogo para que
+	// cualquier vista (Mi unidad, Inicio, Recientes, Destacados, búsqueda,
+	// etc.) anuncie el reproductor reutilizable que corresponde al archivo.
+	if kind := storagepkg.FileKind(name); kind == "image" || kind == "video" || kind == "audio" {
+		return kind
+	}
 	switch strings.ToLower(filepath.Ext(name)) {
 	case ".md", ".markdown", ".mdown", ".mkd":
 		return "markdown"
 	case ".html", ".htm", ".xhtml":
 		return "html"
-	case ".txt", ".text", ".log", ".rst":
+	case ".txt", ".text", ".log", ".rst", ".csv", ".tsv", ".json", ".jsonl", ".yaml", ".yml", ".toml", ".xml", ".ini", ".cfg", ".conf", ".env", ".properties", ".tex", ".css", ".scss", ".sass", ".less", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".vue", ".svelte", ".php", ".py", ".pyw", ".go", ".rs", ".java", ".kt", ".kts", ".c", ".h", ".cpp", ".hpp", ".cs", ".swift", ".dart", ".rb", ".sh", ".bash", ".zsh", ".ps1", ".bat", ".cmd", ".sql", ".graphql":
 		return "text"
 	case ".pdf":
 		return "pdf"

@@ -491,8 +491,10 @@
     hideDownloadMenu();
     if (!id) return;
     try {
-      const handled = window.PersonalCloudDocumentViewer ? await window.PersonalCloudDocumentViewer.open(id) : false;
-      if (!handled) window.location.assign(`/archivo/${encodeURIComponent(id)}/original`);
+      const mediaHandled = window.PersonalCloudMediaViewer ? await window.PersonalCloudMediaViewer.open(id) : false;
+      if (mediaHandled) return;
+      const documentHandled = window.PersonalCloudDocumentViewer ? await window.PersonalCloudDocumentViewer.open(id) : false;
+      if (!documentHandled) window.location.assign(`/archivo/${encodeURIComponent(id)}/original`);
     } catch (error) {
       showToast(error.message || 'No se pudo abrir el archivo');
     }
@@ -614,12 +616,18 @@
   const videoVolume = $('[data-video-volume]', viewer);
   const videoSpeed = $('[data-video-speed]', viewer);
   const fullscreenButton = $('[data-viewer-fullscreen]', viewer);
+  const viewerPrevButton = $('[data-viewer-prev]', viewer);
+  const viewerNextButton = $('[data-viewer-next]', viewer);
   const qualityControl = $('[data-video-quality-control]', viewer);
   const qualitySelect = $('[data-video-quality]', viewer);
   const qualityStatus = $('[data-video-quality-status]', viewer);
   let currentIndex = -1;
   let currentMediaID = '';
   let activeVideo = null;
+  let activeMediaCard = null;
+  let viewerNavigationMode = 'none';
+  let pageMediaIDs = [];
+  let pageMediaIndex = -1;
   let zoom = 1;
   let loadingGallery = false;
   let availabilityBaseline = null;
@@ -1220,13 +1228,21 @@
     viewerStarButton.title = loading ? 'Actualizando…' : label;
   };
 
-  const showMedia = async (index) => {
-    const cards = mediaCards();
-    if (!cards.length || !viewer || !stage) return;
-    currentIndex = (index + cards.length) % cards.length;
-    const card = cards[currentIndex];
+  const mediaViewerKinds = new Set(['image', 'video', 'audio']);
+  const refreshViewerNavigation = () => {
+    if (!viewerPrevButton || !viewerNextButton) return;
+    let count = 0;
+    if (viewerNavigationMode === 'gallery') count = mediaCards().length;
+    else if (viewerNavigationMode === 'page') count = pageMediaIDs.length;
+    const hide = count <= 1;
+    viewerPrevButton.hidden = hide;
+    viewerNextButton.hidden = hide;
+  };
+  const showMediaCard = async (card) => {
+    if (!card || !viewer || !stage || !mediaViewerKinds.has(card.dataset.kind || '')) return false;
     $$('video,audio', stage).forEach((media) => media.pause());
     currentMediaID = card.dataset.mediaId || '';
+    activeMediaCard = card;
     zoom = 1;
     stopVideoProgressLoop();
     videoScrubbing = false;
@@ -1241,6 +1257,7 @@
     viewerShell.dataset.activeKind = card.dataset.kind || '';
     $('[data-viewer-title]', viewer).textContent = card.dataset.name || '';
     setViewerStarState(card.dataset.starred === 'true');
+    refreshViewerNavigation();
 
     if (card.dataset.kind === 'image') {
       const token = currentMediaID;
@@ -1248,12 +1265,26 @@
       if (!viewer.open) viewer.showModal();
       try {
         const cacheIsOriented = Number(card.dataset.cacheVersion || 0) >= 2;
-        const fastSource = cacheIsOriented ? (card.dataset.preview || card.dataset.thumbnail || card.dataset.original) : card.dataset.original;
-        const image = await decodeViewerImage(fastSource, card);
-        if (currentMediaID !== token) return;
+        const sources = cacheIsOriented
+          ? [card.dataset.preview, card.dataset.thumbnail, card.dataset.original]
+          : [card.dataset.original, card.dataset.preview, card.dataset.thumbnail];
+        let image = null;
+        let sourceUsed = '';
+        for (const source of [...new Set(sources.filter(Boolean))]) {
+          try {
+            image = await decodeViewerImage(source, card);
+            sourceUsed = source;
+            break;
+          } catch (_) {}
+        }
+        if (!image) throw new Error('imagen no compatible');
+        if (currentMediaID !== token) return true;
         stage.replaceChildren(image);
         setZoom(1);
-        if (cacheIsOriented && card.dataset.original && fastSource !== card.dataset.original) {
+        // Si la caché ya aplica EXIF y el navegador entiende el original,
+        // sustituimos la preview por el original. Si no entiende HEIC/RAW/etc.,
+        // se conserva la preview local en vez de dejar el visor en blanco.
+        if (cacheIsOriented && card.dataset.original && sourceUsed !== card.dataset.original) {
           try {
             const original = await decodeViewerImage(card.dataset.original, card);
             if (currentMediaID === token) {
@@ -1263,7 +1294,12 @@
           } catch (_) {}
         }
       } catch (_) {
-        if (currentMediaID === token) stage.replaceChildren();
+        if (currentMediaID === token) {
+          const message = document.createElement('div');
+          message.className = 'viewer-media-error';
+          message.textContent = 'No se pudo mostrar esta imagen en el navegador.';
+          stage.replaceChildren(message);
+        }
       } finally {
         if (currentMediaID === token) hideViewerLoader();
       }
@@ -1297,12 +1333,68 @@
       const audio = document.createElement('audio');
       audio.controls = true;
       audio.autoplay = true;
+      audio.preload = 'metadata';
       audio.src = card.dataset.original;
       wrap.append(audio);
       stage.append(wrap);
     }
     if (!viewer.open) viewer.showModal();
+    return true;
   };
+  const showMedia = async (index) => {
+    const cards = mediaCards();
+    if (!cards.length) return false;
+    viewerNavigationMode = 'gallery';
+    currentIndex = (index + cards.length) % cards.length;
+    pageMediaIDs = [];
+    pageMediaIndex = -1;
+    return showMediaCard(cards[currentIndex]);
+  };
+  const mediaCardFromInfo = (info) => {
+    const card = document.createElement('div');
+    Object.assign(card.dataset, {
+      mediaId: String(info.id || ''),
+      kind: String(info.viewer || info.kind || ''),
+      name: String(info.name || ''),
+      original: String(info.original_url || `/archivo/${encodeURIComponent(info.id || '')}/original`),
+      preview: String(info.preview_url || ''),
+      thumbnail: String(info.thumbnail_url || ''),
+      cacheVersion: String(info.cache_version || 0),
+      starred: String(Boolean(info.starred))
+    });
+    return card;
+  };
+  const collectPageMediaIDs = () => {
+    const seen = new Set();
+    const ids = [];
+    $$('[data-download-file-id][data-viewer]').forEach((node) => {
+      if (!mediaViewerKinds.has(node.dataset.viewer || '') || node.dataset.offline === 'true') return;
+      const id = node.dataset.downloadFileId || '';
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      ids.push(id);
+    });
+    return ids;
+  };
+  const openMediaByID = async (fileID, options = {}) => {
+    const id = String(fileID || '').trim();
+    if (!id) return false;
+    const response = await fetch(`/api/archivo/${encodeURIComponent(id)}/info`, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+    if (!response.ok) throw new Error((await response.text()).trim() || 'No se pudo obtener información del archivo.');
+    const info = await response.json();
+    if (!mediaViewerKinds.has(String(info.viewer || ''))) return false;
+    if (info.online === false) throw new Error('La unidad que contiene este archivo no está conectada.');
+    if (!options.preserveNavigation) {
+      viewerNavigationMode = 'page';
+      pageMediaIDs = collectPageMediaIDs();
+      if (!pageMediaIDs.includes(id)) pageMediaIDs = [id, ...pageMediaIDs];
+    }
+    pageMediaIndex = pageMediaIDs.indexOf(id);
+    currentIndex = -1;
+    const card = mediaCardFromInfo(info);
+    return showMediaCard(card);
+  };
+
   grid?.addEventListener('click', (event) => {
     const card = event.target.closest('[data-media-id]');
     if (!card) return;
@@ -1314,14 +1406,20 @@
     showMedia(mediaCards().indexOf(card));
   });
   const stepMedia = async (delta) => {
-    const before = mediaCards().length;
-    if (delta > 0 && currentIndex === before - 1 && grid?.dataset.hasMore === 'true') await loadMoreGallery();
-    await showMedia(currentIndex + delta);
+    if (viewerNavigationMode === 'gallery') {
+      const before = mediaCards().length;
+      if (delta > 0 && currentIndex === before - 1 && grid?.dataset.hasMore === 'true') await loadMoreGallery();
+      await showMedia(currentIndex + delta);
+      return;
+    }
+    if (viewerNavigationMode !== 'page' || pageMediaIDs.length <= 1) return;
+    pageMediaIndex = (pageMediaIndex + delta + pageMediaIDs.length) % pageMediaIDs.length;
+    await openMediaByID(pageMediaIDs[pageMediaIndex], { preserveNavigation: true });
   };
   viewerStarButton?.addEventListener('click', async () => {
     const id = currentMediaID;
     if (!id) return;
-    const card = mediaCards().find((item) => item.dataset.mediaId === id);
+    const card = activeMediaCard || mediaCards().find((item) => item.dataset.mediaId === id);
     const current = card?.dataset.starred === 'true';
     setViewerStarState(current, true);
     try {
@@ -1334,9 +1432,9 @@
       showToast(error.message || 'No se pudo actualizar Destacados');
     }
   });
-    $('[data-viewer-close]', viewer)?.addEventListener('click', () => viewer.close());
-  $('[data-viewer-prev]', viewer)?.addEventListener('click', () => stepMedia(-1));
-  $('[data-viewer-next]', viewer)?.addEventListener('click', () => stepMedia(1));
+  $('[data-viewer-close]', viewer)?.addEventListener('click', () => viewer.close());
+  viewerPrevButton?.addEventListener('click', () => stepMedia(-1));
+  viewerNextButton?.addEventListener('click', () => stepMedia(1));
   fullscreenButton?.addEventListener('click', async () => {
     if (!activeVideo) return;
     try {
@@ -1358,7 +1456,12 @@
     resetQualityControl();
     activeVideo = null;
     activeVideoCard = null;
+    activeMediaCard = null;
+    viewerNavigationMode = 'none';
+    pageMediaIDs = [];
+    pageMediaIndex = -1;
     if (videoControls) videoControls.hidden = true;
+    refreshViewerNavigation();
     hideViewerLoader();
     if (viewerShell) viewerShell.dataset.activeKind = '';
   });
@@ -1417,6 +1520,24 @@
     refreshGalleryAvailability();
     window.setInterval(refreshGalleryAvailability, 5000);
   }
+
+  // Reutiliza el mismo visor multimedia desde Mi unidad, Inicio, búsqueda,
+  // Recientes, Destacados y cualquier listado que declare data-viewer.
+  document.addEventListener('click', (event) => {
+    if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    if (document.body.classList.contains('selection-mode') || event.target.closest('button')) return;
+    const carrier = event.target.closest('[data-download-file-id][data-viewer]');
+    if (!carrier || !mediaViewerKinds.has(carrier.dataset.viewer || '')) return;
+    const id = carrier.dataset.downloadFileId || '';
+    if (!id) return;
+    event.preventDefault();
+    if (carrier.dataset.offline === 'true') {
+      showToast('La unidad de este archivo no está conectada');
+      return;
+    }
+    openMediaByID(id).catch((error) => showToast(error.message || 'No se pudo abrir el archivo'));
+  });
+  window.PersonalCloudMediaViewer = { open: openMediaByID };
 
   // Menú contextual: Galería, visor y filas de Archivos.
   document.addEventListener('contextmenu', (event) => {

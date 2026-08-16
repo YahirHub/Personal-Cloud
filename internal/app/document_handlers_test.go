@@ -14,7 +14,11 @@ func TestFileViewerKindAndEditingPolicy(t *testing.T) {
 		{"notas.txt", "text", true},
 		{"registro.log", "text", true},
 		{"guia.pdf", "pdf", false},
-		{"foto.jpg", "", false},
+		{"foto.jpg", "image", false},
+		{"clip.mp4", "video", false},
+		{"cancion.flac", "audio", false},
+		{"datos.json", "text", true},
+		{"main.go", "text", true},
 		{"app.apk", "", false},
 	}
 	for _, tt := range tests {
