@@ -64,6 +64,10 @@ type pageData struct {
 	RetryAfter             int
 	StorageItems           []storagePageItem
 	StorageError           string
+	StorageSummary         storageSummary
+	StorageSummaryLoaded   bool
+	StorageUsageItems      []storageUsageItem
+	StorageLargestFiles    []explorerItem
 	Stats                  dashboardStats
 	HomeFolders            []explorerRoot
 	HomeFiles              []homeFileItem
@@ -371,6 +375,10 @@ func (a *App) render(w http.ResponseWriter, status int, page string, data pageDa
 
 func (a *App) csrfData(w http.ResponseWriter, r *http.Request, data pageData) pageData {
 	data.CSRFToken = a.ensureCSRF(w, r)
+	if data.User != nil && !data.StorageSummaryLoaded {
+		data.StorageSummary = a.storageSummaryForContext(r.Context())
+		data.StorageSummaryLoaded = true
+	}
 	return data
 }
 

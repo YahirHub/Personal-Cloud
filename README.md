@@ -16,7 +16,7 @@ Implementado:
 - URLs amigables y frontend con layout/componentes reutilizables.
 - Interfaz oscura inspirada estrechamente en Google Drive: topbar, búsqueda, navegación lateral, botón Nuevo, página principal con carpetas/archivos sugeridos en cuadrícula o lista y Mi unidad con cuadrícula/lista, manteniendo identidad propia y assets locales. La raíz de Mi unidad combina el primer nivel de las unidades disponibles y siempre presenta carpetas antes que archivos, sin exponer los discos físicos como carpetas artificiales.
 - Los menús `⋯` de las unidades son reales: permiten abrir, consultar propiedades/estado/capacidad, actualizar el catálogo, montar bajo demanda y saltar a la administración de almacenamiento.
-- Los menús de archivo incluyen abrir, descargar, información, agregar/quitar de Destacados, renombrar, mover y eliminar; la información sigue disponible desde el catálogo aunque el original esté temporalmente offline.
+- Los menús de archivo incluyen abrir, descargar, información, agregar/quitar de Destacados, renombrar, mover y eliminar; la información sigue disponible desde el catálogo aunque el original esté temporalmente offline. El clic derecho reutiliza esas acciones, y **Eliminar** también está disponible dentro de los visores y para una selección múltiple mediante un diálogo de confirmación propio.
 - `Recientes` y `Destacados` son vistas reales. Los destacados se guardan por usuario y siguen al archivo si se renombra o mueve desde el panel; también pueden alternarse desde el visor multimedia y desde una selección múltiple.
 - El botón `Nuevo` abre un menú estilo Drive con **Nueva carpeta** y **Subir archivo**; Mi unidad también admite drag & drop directo sobre la carpeta actual.
 - Mi unidad, búsqueda, Recientes y Destacados tienen filtros funcionales por tipo y fecha de modificación; las vistas globales también pueden filtrar por unidad/fuente. Los filtros se conservan al alternar paginación/scroll continuo.
@@ -34,7 +34,7 @@ Implementado:
 - Galería `/galeria` que usa la caché interna aunque el disco original esté desmontado y oculta medios de unidades físicamente desconectadas. El mismo visor multimedia es global: imágenes, video y audio se abren con ese reproductor desde Inicio, Mi unidad, búsqueda, Recientes, Destacados y `⋯ → Abrir`.
 - Filtro compacto por imágenes/video/audio y orden por fecha de archivo, fecha de incorporación o nombre.
 - Visor offline de imagen/video/audio centrado a viewport completo, con navegación ←/→ o A/D, zoom suave W/S y reproductor de video con controles inferiores propios (play, seek, volumen, velocidad, calidad y fullscreen).
-- Visores locales para **Markdown, HTML, texto/código UTF-8 y PDF** integrados en la interfaz: Markdown se renderiza sin librerías externas, HTML se muestra en un iframe aislado con scripts/red/formularios bloqueados y PDF usa el visor nativo del navegador con soporte de rangos. Texto incluye TXT y formatos compatibles como JSON/YAML/TOML/XML/CSV, código fuente y scripts; se pueden editar y guardar desde el navegador con `Ctrl+S`, control de conflictos y límite de 8 MiB. Todos los visores incluyen descarga segura y Destacados.
+- Visores locales para **Markdown, HTML, texto/código UTF-8 y PDF** integrados en la interfaz: Markdown se renderiza sin librerías externas; HTML se parsea fuera del DOM principal y se entrega por `srcdoc` a un iframe `sandbox` de origen opaco, con CSP estricta, scripts/red/formularios/frames bloqueados y atributos de evento retirados, por lo que no puede mezclarse con el HTML/CSS de Nube; PDF usa el visor nativo del navegador con soporte de rangos. Texto incluye TXT y formatos compatibles como JSON/YAML/TOML/XML/CSV, código fuente y scripts; se pueden editar y guardar desde el navegador con `Ctrl+S`, control de conflictos y límite de 8 MiB. Todos los visores incluyen descarga segura, Destacados y eliminación confirmada.
 - Preferencias locales persistentes del reproductor de video: mute, volumen y velocidad.
 - Calidad de video **Auto**/Original/360p/480p/720p/1080p cuando FFmpeg + libx264 están disponibles; Auto mide una muestra de la ruta real, considera el tamaño del visor y aplica margen de seguridad para elegir resolución. Las variantes se generan bajo demanda y se cachean localmente.
 - Descarga por clic derecho mediante ticket AES-GCM opaco, ligado al usuario y de vida corta; las URLs no revelan ruta, storage ID ni nombre del archivo.
@@ -156,7 +156,7 @@ Abre:
 /almacenamiento
 ```
 
-La pantalla separa unidades registradas de volúmenes detectados.
+La pantalla muestra primero una **capacidad unificada tipo Drive**: suma capacidad, uso real (`capacidad - libre`) y espacio libre de todas las unidades registradas que están conectadas en ese momento. Las unidades desconectadas o aún no registradas no inflan el total. El mismo resumen aparece en la barra lateral. Debajo se desglosa cada unidad conectada con sus bytes usados, libres y totales, se listan los archivos online que más espacio ocupan y finalmente se conserva el panel completo de administración para unidades registradas y volúmenes detectados.
 
 ### Identidad de volúmenes
 
@@ -272,9 +272,9 @@ Galería y Archivos comparten un modo de selección activado desde el botón de 
 
 - **Descargar ZIP**: crea el ZIP directamente sobre la respuesta HTTP, un archivo a la vez, con un buffer de 64 KiB. Fotos, video, audio, PDF y archivos ya comprimidos usan `Store` para no gastar CPU inútilmente; texto y formatos compresibles usan Deflate `BestSpeed`. No crea un ZIP temporal gigante ni carga todos los archivos en RAM. Solo se permite un ZIP masivo simultáneo para proteger hardware modesto. Los archivos que desaparezcan o cuya unidad se desconecte durante el proceso se anotan dentro de `PERSONAL-CLOUD-ERRORES.txt` sin tumbar todo el servidor.
 - **Mover**: permite elegir otra unidad, navegar sus carpetas y crear explícitamente una carpeta nueva desde el propio diálogo; también admite escribir una ruta relativa. Si la carpeta no existe se crea. En la misma unidad usa rename; entre unidades copia por streaming a un temporal, hace `Sync`, confirma el destino y solo después elimina el origen. El catálogo y las caches se actualizan directamente, sin reindexar toda la unidad.
-- **Eliminar**: pide confirmación, elimina los originales/caches y retira las entradas del catálogo.
+- **Eliminar**: usa un diálogo de confirmación propio, elimina los originales/caches y retira las entradas del catálogo. El mismo flujo se reutiliza al borrar desde el visor multimedia, el visor de documentos, el menú contextual de un archivo o el menú contextual de una selección múltiple.
 
-El mismo menú de Descargar/Mover/Eliminar aparece con clic derecho en escritorio y con pulsación larga en dispositivos táctiles/Android. Todas las mutaciones usan sesión autenticada, CSRF, límites de operación y validación del VFS; las descargas masivas remotas requieren HTTPS y usan un ticket aleatorio opaco, de un solo uso y ligado al usuario.
+El mismo menú de Descargar/Mover/Eliminar aparece con clic derecho en escritorio y con pulsación larga en dispositivos táctiles/Android. Cuando hay selección múltiple activa, el clic derecho abre acciones para toda la selección en lugar de actuar accidentalmente sobre un único archivo. Todas las mutaciones usan sesión autenticada, CSRF, límites de operación y validación del VFS; las descargas masivas remotas requieren HTTPS y usan un ticket aleatorio opaco, de un solo uso y ligado al usuario.
 
 ### Configuración, sincronización e integridad
 
@@ -296,7 +296,7 @@ Controles del visor:
 - video usa controles locales propios (play, timeline, volumen, velocidad, Auto/calidad y fullscreen) y audio conserva controles HTML5;
 - título y ayuda se muestran en una franja superior superpuesta, dejando siempre libre la zona inferior del reproductor;
 - mute, volumen y velocidad de video se guardan en el navegador y se restauran al cambiar de video o recargar.
-- clic derecho sobre un medio permite solicitar una descarga segura mediante ticket opaco.
+- clic derecho sobre un medio abre el mismo menú contextual global (incluido **Eliminar** con confirmación); el visor también expone un botón de papelera para borrar el elemento abierto.
 
 JPEG, PNG y GIF generan miniatura/preview usando únicamente la biblioteca estándar. En JPEG se aplica `EXIF Orientation` antes de escribir la caché, de modo que preview y original tienen la misma orientación. La caché de imagen está versionada: al reindexar, previews anteriores se regeneran automáticamente. El visor además decodifica la siguiente imagen fuera del DOM y solo sustituye el medio visible cuando está lista, evitando el parpadeo de orientación al navegar. Para proteger el MiniPC frente a imágenes que disparen el uso de RAM, una fuente que el decoder nativo identifica con más de 80 megapíxeles se cataloga pero no se decodifica para thumbnail.
 

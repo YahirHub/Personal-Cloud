@@ -110,6 +110,37 @@
 
   // Descargas seguras mediante ticket opaco de vida corta.
   const csrfToken = $('meta[name="csrf-token"]')?.content || '';
+  const deleteConfirmDialog = $('[data-delete-confirm]');
+  const deleteConfirmTitle = $('[data-delete-confirm-title]', deleteConfirmDialog);
+  const deleteConfirmMessage = $('[data-delete-confirm-message]', deleteConfirmDialog);
+  const deleteConfirmDetail = $('[data-delete-confirm-detail]', deleteConfirmDialog);
+  const deleteConfirmLabel = $('[data-delete-confirm-label]', deleteConfirmDialog);
+  const deleteConfirmAccept = $('[data-delete-confirm-accept]', deleteConfirmDialog);
+  const deleteConfirmCancel = $('[data-delete-confirm-cancel]', deleteConfirmDialog);
+  let deleteConfirmResolve = null;
+  const settleDeleteConfirm = (value) => {
+    const resolve = deleteConfirmResolve;
+    deleteConfirmResolve = null;
+    if (deleteConfirmDialog?.open) deleteConfirmDialog.close();
+    if (resolve) resolve(Boolean(value));
+  };
+  const confirmDangerousAction = ({ title = '¿Eliminar?', message = 'El elemento se eliminará permanentemente.', detail = 'Esta acción no se puede deshacer.', confirmLabel = 'Eliminar' } = {}) => {
+    if (!deleteConfirmDialog) return Promise.resolve(window.confirm(`${title}\n\n${message}\n\n${detail}`));
+    if (deleteConfirmResolve) settleDeleteConfirm(false);
+    if (deleteConfirmTitle) deleteConfirmTitle.textContent = title;
+    if (deleteConfirmMessage) deleteConfirmMessage.textContent = message;
+    if (deleteConfirmDetail) deleteConfirmDetail.textContent = detail;
+    if (deleteConfirmLabel) deleteConfirmLabel.textContent = confirmLabel;
+    deleteConfirmDialog.showModal();
+    window.setTimeout(() => deleteConfirmCancel?.focus(), 0);
+    return new Promise((resolve) => { deleteConfirmResolve = resolve; });
+  };
+  deleteConfirmAccept?.addEventListener('click', () => settleDeleteConfirm(true));
+  deleteConfirmCancel?.addEventListener('click', () => settleDeleteConfirm(false));
+  deleteConfirmDialog?.addEventListener('cancel', (event) => { event.preventDefault(); settleDeleteConfirm(false); });
+  deleteConfirmDialog?.addEventListener('click', (event) => { if (event.target === deleteConfirmDialog) settleDeleteConfirm(false); });
+  window.PersonalCloudConfirm = { ask: confirmDangerousAction };
+
   const downloadMenu = $('[data-download-menu]');
   let downloadTargetID = '';
   let downloadTargetOffline = false;
@@ -605,6 +636,7 @@
   const viewerShell = $('[data-viewer-shell]', viewer);
   const stage = $('[data-viewer-stage]', viewer);
   const viewerStarButton = $('[data-viewer-star]', viewer);
+  const viewerDeleteButton = $('[data-viewer-delete]', viewer);
   const videoControls = $('[data-video-controls]', viewer);
   const videoPlayButton = $('[data-video-play]', viewer);
   const videoPlayIcon = $('[data-video-play-icon]', viewer);
@@ -1432,6 +1464,19 @@
       showToast(error.message || 'No se pudo actualizar Destacados');
     }
   });
+  viewerDeleteButton?.addEventListener('click', async () => {
+    const id = currentMediaID;
+    if (!id) return;
+    viewerDeleteButton.disabled = true;
+    try {
+      const deleted = await deleteIDs([id], { reload: false, source: 'viewer' });
+      if (deleted) {
+        if (viewer?.open) viewer.close();
+        window.setTimeout(() => window.location.reload(), 180);
+      }
+    } catch (error) { showToast(error.message || 'No se pudo eliminar el archivo'); }
+    finally { viewerDeleteButton.disabled = false; }
+  });
   $('[data-viewer-close]', viewer)?.addEventListener('click', () => viewer.close());
   viewerPrevButton?.addEventListener('click', () => stepMedia(-1));
   viewerNextButton?.addEventListener('click', () => stepMedia(1));
@@ -1542,10 +1587,22 @@
   // Menú contextual: Galería, visor y filas de Archivos.
   document.addEventListener('contextmenu', (event) => {
     const target = event.target.closest('[data-download-file-id]');
+    const selectableID = target?.dataset.selectableFile || '';
+    if (document.body.classList.contains('selection-mode') && selectableID && target?.dataset.offline !== 'true') {
+      event.preventDefault();
+      if (!selectedIDs.has(selectableID)) {
+        selectedIDs.clear();
+        selectedIDs.add(selectableID);
+        refreshSelectionUI();
+      }
+      showSelectionContext(event.clientX, event.clientY);
+      return;
+    }
     let fileID = target?.dataset.downloadFileId || '';
     if (!fileID && viewer?.open && viewer.contains(event.target)) fileID = currentMediaID;
     if (!fileID) return;
     event.preventDefault();
+    hideSelectionContext();
     showDownloadMenu(event.clientX, event.clientY, fileID, target?.dataset.offline === 'true');
   });
 
@@ -1707,6 +1764,15 @@
   const selectionCount = $('[data-selection-count]');
   const bulkStarButton = $('[data-bulk-star]');
   const bulkStarLabel = $('[data-bulk-star-label]', bulkStarButton);
+  const bulkDownloadButton = $('[data-bulk-download]');
+  const bulkMoveButton = $('[data-bulk-move]');
+  const bulkDeleteButton = $('[data-bulk-delete]');
+  const selectionContext = $('[data-selection-context]');
+  const selectionContextStar = $('[data-selection-context-star]', selectionContext);
+  const selectionContextStarLabel = $('[data-selection-context-star-label]', selectionContext);
+  const selectionContextDownload = $('[data-selection-context-download]', selectionContext);
+  const selectionContextMove = $('[data-selection-context-move]', selectionContext);
+  const selectionContextDelete = $('[data-selection-context-delete]', selectionContext);
   const moveDialog = $('[data-move-dialog]');
   const moveForm = $('[data-move-form]', moveDialog);
   const moveRoot = $('[data-move-root]', moveForm);
@@ -1761,10 +1827,11 @@
       bulkStarButton.title = allStarred ? 'Quitar de Destacados' : 'Agregar a Destacados';
       if (bulkStarLabel) bulkStarLabel.textContent = allStarred ? 'Quitar de Destacados' : 'Agregar a Destacados';
     }
+    syncSelectionContext();
   };
   const setSelectionMode = (enabled) => {
     document.body.classList.toggle('selection-mode', enabled);
-    if (!enabled) selectedIDs.clear();
+    if (!enabled) { selectedIDs.clear(); hideSelectionContext(); }
     refreshSelectionUI();
   };
   const toggleSelected = (element) => {
@@ -1772,6 +1839,25 @@
     if (!id || element.dataset.offline === 'true') return;
     if (selectedIDs.has(id)) selectedIDs.delete(id); else selectedIDs.add(id);
     refreshSelectionUI();
+  };
+  const hideSelectionContext = () => { if (selectionContext) selectionContext.hidden = true; };
+  const syncSelectionContext = () => {
+    if (!selectionContext) return;
+    const selectable = $$('[data-selectable-file]');
+    const allStarred = selectedIDs.size > 0 && [...selectedIDs].every((id) => selectable.some((element) => element.dataset.selectableFile === id && element.dataset.starred === 'true'));
+    if (selectionContextStarLabel) selectionContextStarLabel.textContent = allStarred ? 'Quitar de Destacados' : 'Agregar a Destacados';
+    if (selectionContextStar) selectionContextStar.dataset.starred = String(allStarred);
+  };
+  const showSelectionContext = (x, y) => {
+    if (!selectionContext || selectedIDs.size === 0) return;
+    hideDownloadMenu();
+    syncSelectionContext();
+    selectionContext.hidden = false;
+    selectionContext.style.left = '0px';
+    selectionContext.style.top = '0px';
+    const rect = selectionContext.getBoundingClientRect();
+    selectionContext.style.left = `${Math.max(8, Math.min(x, window.innerWidth - rect.width - 8))}px`;
+    selectionContext.style.top = `${Math.max(8, Math.min(y, window.innerHeight - rect.height - 8))}px`;
   };
   const hideSelectionMenu = () => { if (selectionMenu) selectionMenu.hidden = true; };
   const showSelectionMenu = (trigger) => {
@@ -1813,11 +1899,21 @@
     if (moreRemain) window.alert('Se seleccionaron los primeros 500 elementos disponibles, que es el límite seguro por operación.');
   };
   $('[data-selection-all]', selectionMenu)?.addEventListener('click', () => { selectEverythingAvailable(); });
-  document.addEventListener('click', (event) => { if (!event.target.closest('[data-selection-menu]') && !event.target.closest('[data-open-selection-menu]')) hideSelectionMenu(); });
-  window.addEventListener('resize', hideSelectionMenu);
-  window.addEventListener('blur', hideSelectionMenu);
-  $$('[data-confirm-damaged]').forEach((form) => form.addEventListener('submit', (event) => {
-    if (!window.confirm('¿Eliminar permanentemente los elementos dañados de esta unidad? Esta acción no se puede deshacer.')) event.preventDefault();
+  document.addEventListener('click', (event) => {
+    if (!event.target.closest('[data-selection-menu]') && !event.target.closest('[data-open-selection-menu]')) hideSelectionMenu();
+    if (!event.target.closest('[data-selection-context]')) hideSelectionContext();
+  });
+  window.addEventListener('resize', () => { hideSelectionMenu(); hideSelectionContext(); });
+  window.addEventListener('blur', () => { hideSelectionMenu(); hideSelectionContext(); });
+  $$('[data-confirm-damaged]').forEach((form) => form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const confirmed = await confirmDangerousAction({
+      title: '¿Eliminar los elementos dañados?',
+      message: 'Se eliminarán permanentemente de esta unidad los archivos multimedia marcados como dañados.',
+      detail: 'Esta acción no se puede deshacer.',
+      confirmLabel: 'Eliminar dañados'
+    });
+    if (confirmed) form.submit();
   }));
   $('[data-selection-cancel]')?.addEventListener('click', () => setSelectionMode(false));
   document.addEventListener('click', (event) => {
@@ -1871,7 +1967,7 @@
       bulkStarButton.disabled = false;
     }
   });
-    $('[data-bulk-download]')?.addEventListener('click', async () => {
+    bulkDownloadButton?.addEventListener('click', async () => {
     try { await startBatchDownload([...selectedIDs]); } catch (error) { window.alert(error.message); }
   });
   const openMoveDialog = (ids) => {
@@ -1885,7 +1981,7 @@
     moveDialog?.showModal();
     if (moveRoot?.value) loadMoveFolders('');
   };
-  $('[data-bulk-move]')?.addEventListener('click', () => openMoveDialog(selectedIDs));
+  bulkMoveButton?.addEventListener('click', () => openMoveDialog(selectedIDs));
   $$('[data-close-move]').forEach((button) => button.addEventListener('click', () => moveDialog?.close()));
   moveDialog?.addEventListener('click', (event) => { if (event.target === moveDialog) moveDialog.close(); });
   moveRoot?.addEventListener('change', () => loadMoveFolders(''));
@@ -1918,19 +2014,55 @@
       if (error.data?.partial) window.location.reload();
     }
   });
-  const deleteIDs = async (ids) => {
-    if (!ids.length || !window.confirm(`¿Eliminar permanentemente ${ids.length} elemento(s)? Esta acción no se puede deshacer.`)) return;
-    await postAction('/api/elementos/eliminar', ids);
-    window.location.reload();
+  const deleteIDs = async (ids, options = {}) => {
+    const unique = [...new Set((ids || []).filter(Boolean))];
+    if (!unique.length) return false;
+    const singleName = unique.length === 1
+      ? ($(`[data-download-file-id="${CSS.escape(unique[0])}"]`)?.querySelector('strong')?.textContent || downloadTargetInfo?.name || '')
+      : '';
+    const confirmed = await confirmDangerousAction({
+      title: unique.length === 1 ? '¿Eliminar este archivo?' : `¿Eliminar ${unique.length} elementos?`,
+      message: singleName ? `“${singleName}” se eliminará permanentemente del medio.` : `${unique.length} elementos se eliminarán permanentemente de sus unidades.`,
+      detail: 'Esta acción elimina los originales y no se puede deshacer.',
+      confirmLabel: unique.length === 1 ? 'Eliminar' : `Eliminar ${unique.length}`
+    });
+    if (!confirmed) return false;
+    try {
+      await postAction('/api/elementos/eliminar', unique);
+    } catch (error) {
+      if (error.data?.partial) {
+        showToast(`${error.data.completed || 0} elemento(s) se eliminaron antes del fallo; actualizando la vista…`);
+        window.setTimeout(() => window.location.reload(), 700);
+      }
+      throw error;
+    }
+    unique.forEach((id) => {
+      const escaped = CSS.escape(id);
+      $$(`[data-download-file-id="${escaped}"], [data-selectable-file="${escaped}"]`).forEach((node) => node.remove());
+      selectedIDs.delete(id);
+    });
+    refreshSelectionUI();
+    showToast(unique.length === 1 ? 'Archivo eliminado' : `${unique.length} elementos eliminados`);
+    if (options.reload !== false) window.setTimeout(() => window.location.reload(), 160);
+    return true;
   };
-  $('[data-bulk-delete]')?.addEventListener('click', async () => {
+  bulkDeleteButton?.addEventListener('click', async () => {
     try { await deleteIDs([...selectedIDs]); } catch (error) { window.alert(error.message); }
   });
+  selectionContextStar?.addEventListener('click', () => { hideSelectionContext(); bulkStarButton?.click(); });
+  selectionContextDownload?.addEventListener('click', () => { hideSelectionContext(); bulkDownloadButton?.click(); });
+  selectionContextMove?.addEventListener('click', () => { hideSelectionContext(); bulkMoveButton?.click(); });
+  selectionContextDelete?.addEventListener('click', () => { hideSelectionContext(); bulkDeleteButton?.click(); });
   $('[data-context-move]', downloadMenu)?.addEventListener('click', () => { const id = downloadTargetID; if (id) openMoveDialog([id]); });
   $('[data-context-delete]', downloadMenu)?.addEventListener('click', async () => {
     const id = downloadTargetID; hideDownloadMenu();
     try { if (id) await deleteIDs([id]); } catch (error) { window.alert(error.message); }
   });
+  window.PersonalCloudActions = {
+    showFileContext: (x, y, fileID, offline = false) => showDownloadMenu(x, y, fileID, offline),
+    deleteFiles: (ids, options = {}) => deleteIDs(ids, options),
+    confirmDangerousAction
+  };
 
   // Pulsación larga táctil = mismo menú de acciones que clic derecho.
   let pressTimer = 0, pressStartX = 0, pressStartY = 0;
@@ -1943,7 +2075,17 @@
     pressTimer = window.setTimeout(() => {
       longPressFired = true;
       if (navigator.vibrate) navigator.vibrate(20);
-      showDownloadMenu(pressStartX, pressStartY, target.dataset.downloadFileId, target.dataset.offline === 'true');
+      const selectableID = target.dataset.selectableFile || '';
+      if (document.body.classList.contains('selection-mode') && selectableID && target.dataset.offline !== 'true') {
+        if (!selectedIDs.has(selectableID)) {
+          selectedIDs.clear();
+          selectedIDs.add(selectableID);
+          refreshSelectionUI();
+        }
+        showSelectionContext(pressStartX, pressStartY);
+      } else {
+        showDownloadMenu(pressStartX, pressStartY, target.dataset.downloadFileId, target.dataset.offline === 'true');
+      }
     }, 550);
   }, { passive: true });
   document.addEventListener('pointermove', (event) => {

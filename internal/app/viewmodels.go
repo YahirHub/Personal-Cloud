@@ -7,6 +7,29 @@ import (
 	"personalcloud/internal/storage"
 )
 
+type storageSummary struct {
+	Total       uint64
+	Used        uint64
+	Free        uint64
+	PercentUsed int
+	OnlineUnits int
+}
+
+type storageUsageItem struct {
+	ID          string
+	Name        string
+	VirtualRoot string
+	FSType      string
+	MountPoint  string
+	Capacity    uint64
+	Used        uint64
+	Free        uint64
+	PercentUsed int
+	ReadOnly    bool
+	Mounted     bool
+	Online      bool
+}
+
 type storagePageItem struct {
 	storage.View
 	Job            catalog.JobStatus

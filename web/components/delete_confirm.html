@@ -1,0 +1,16 @@
+{{define "delete-confirm"}}
+<dialog class="delete-confirm-dialog" data-delete-confirm aria-labelledby="delete-confirm-title">
+  <section class="delete-confirm-card">
+    <div class="delete-confirm-icon">{{template "icon-trash" .}}</div>
+    <div class="delete-confirm-copy">
+      <h2 id="delete-confirm-title" data-delete-confirm-title>¿Eliminar este elemento?</h2>
+      <p data-delete-confirm-message>El archivo se eliminará permanentemente del medio.</p>
+      <small data-delete-confirm-detail>Esta acción no se puede deshacer.</small>
+    </div>
+    <div class="delete-confirm-actions">
+      <button class="button button-ghost" type="button" data-delete-confirm-cancel>Cancelar</button>
+      <button class="button button-danger" type="button" data-delete-confirm-accept>{{template "icon-trash" .}} <span data-delete-confirm-label>Eliminar</span></button>
+    </div>
+  </section>
+</dialog>
+{{end}}

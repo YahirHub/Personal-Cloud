@@ -139,13 +139,24 @@ func (a *App) storageGet(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, item)
 	}
+	filter := explorerFilterFromRequest(r)
+	summary, usageItems := storageUsageFromViews(views)
 	data := a.csrfData(w, r, pageData{
-		Title:          "Almacenamiento",
-		Description:    "Administra unidades, montaje bajo demanda e indexación.",
-		CurrentPath:    "/almacenamiento",
-		User:           user,
-		StorageItems:   items,
-		MaxUploadBytes: a.cfg.MaxUploadBytes,
+		Title:                "Almacenamiento",
+		Description:          "Administra unidades, capacidad unificada, montaje bajo demanda e indexación.",
+		CurrentPath:          "/almacenamiento",
+		User:                 user,
+		StorageItems:         items,
+		StorageSummary:       summary,
+		StorageSummaryLoaded: true,
+		StorageUsageItems:    usageItems,
+		StorageLargestFiles:  a.storageLargestOnlineFiles(r.Context(), user.ID, views, filter, 40),
+		FileTypeFilter:       filter.Kind,
+		FileModifiedFilter:   filter.Modified,
+		FileSourceFilter:     filter.Source,
+		FileFilterAction:     "/almacenamiento",
+		FileFilterCount:      explorerFilterCount(filter),
+		MaxUploadBytes:       a.cfg.MaxUploadBytes,
 	})
 	if discoverErr != nil {
 		data.StorageError = discoverErr.Error()

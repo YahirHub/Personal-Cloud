@@ -11,9 +11,15 @@
     <a class="nav-link {{if eq .CurrentPath "/almacenamiento"}}active{{end}}" href="/almacenamiento">{{template "icon-storage" .}}<span>Almacenamiento</span></a>
     <a class="nav-link {{if eq .CurrentPath "/configuracion"}}active{{end}}" href="/configuracion">{{template "icon-settings" .}}<span>Configuración</span></a>
   </nav>
-  <div class="sidebar-footer drive-sidebar-note">
-    <span class="drive-sidebar-note-icon">{{template "icon-storage" .}}</span>
-    <div><strong>Almacenamiento local</strong><small>Archivos y caché administrados por este servidor.</small></div>
-  </div>
+  <a class="sidebar-footer drive-storage-summary" href="/almacenamiento" aria-label="Ver almacenamiento">
+    <div class="drive-storage-summary-title"><span class="drive-sidebar-note-icon">{{template "icon-storage" .}}</span><strong>Almacenamiento</strong></div>
+    {{if gt .StorageSummary.Total 0}}
+      <div class="drive-storage-mini-track" aria-hidden="true"><span style="width:{{.StorageSummary.PercentUsed}}%"></span></div>
+      <small><strong>{{formatBytesU .StorageSummary.Used}}</strong> de {{formatBytesU .StorageSummary.Total}} usados</small>
+      <small>{{formatBytesU .StorageSummary.Free}} libres · {{.StorageSummary.OnlineUnits}} unidad(es)</small>
+    {{else}}
+      <small>No hay unidades conectadas con capacidad disponible.</small>
+    {{end}}
+  </a>
 </aside>
 {{end}}

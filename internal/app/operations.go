@@ -221,29 +221,78 @@ func (a *App) elementsDeletePost(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, http.StatusBadRequest)
 		return
 	}
-	deleted := 0
-	catalogDeletes := make([]string, 0, len(ids))
+
+	// Preflight de todas las unidades antes de borrar el primer original. Así una
+	// selección que contiene un medio desconectado/solo lectura falla completa en
+	// lugar de dejar una eliminación parcial evitable.
+	views, discoverErr := a.storageManager.Views(r.Context())
+	if discoverErr != nil && len(views) == 0 {
+		writeJSONError(w, fmt.Errorf("comprobar unidades antes de eliminar: %w", discoverErr), http.StatusConflict)
+		return
+	}
+	writable := make(map[string]bool, len(views))
+	for _, view := range views {
+		if view.Registered {
+			writable[view.ID] = view.Online && !view.ReadOnly
+		}
+	}
+	files := make([]catalog.File, 0, len(ids))
 	for _, id := range ids {
 		file, ok := a.catalog.ByID(id)
 		if !ok {
 			continue
 		}
+		if !writable[file.StorageID] {
+			writeJSONError(w, fmt.Errorf("%s está en una unidad desconectada o de solo lectura", file.Name), http.StatusConflict)
+			return
+		}
+		files = append(files, file)
+	}
+	if len(files) == 0 {
+		writeJSON(w, map[string]any{"ok": true, "deleted": 0})
+		return
+	}
+
+	deleted := 0
+	catalogDeletes := make([]string, 0, len(files))
+	flushDeletedMetadata := func() error {
+		if len(catalogDeletes) == 0 {
+			return nil
+		}
+		if err := a.catalog.DeleteIDs(r.Context(), catalogDeletes); err != nil {
+			return err
+		}
+		if err := a.store.DeleteStarredFileIDs(r.Context(), catalogDeletes); err != nil {
+			a.logger.Warn("no se pudieron limpiar Destacados de archivos eliminados", "error", err)
+		}
+		return nil
+	}
+
+	for _, file := range files {
 		virtual := path.Join("/", file.VirtualRoot, file.RelativePath)
 		err := a.vfs.Remove(r.Context(), virtual)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			writeJSONError(w, fmt.Errorf("eliminar %s: %w", file.Name, err), http.StatusConflict)
+			// Si el medio cambia de estado entre el preflight y esta operación,
+			// persistimos inmediatamente lo que sí fue eliminado para que catálogo,
+			// caché y disco no se contradigan.
+			if flushErr := flushDeletedMetadata(); flushErr != nil {
+				a.logger.Error("eliminación parcial y catálogo no actualizado", "deleted", deleted, "error", flushErr)
+				writeJSONOperationError(w, errors.New("algunos originales se eliminaron, pero no se pudo actualizar el catálogo; ejecuta Sincronizar ahora"), http.StatusInternalServerError, deleted)
+				return
+			}
+			user := userFromContext(r.Context())
+			_ = a.store.Audit(r.Context(), user.ID, "files_delete_partial", fmt.Sprintf("correcto:%d error:%s", deleted, err), a.clientIP(r))
+			writeJSONOperationError(w, fmt.Errorf("eliminar %s: %w", file.Name, err), http.StatusConflict, deleted)
 			return
 		}
 		a.catalog.RemoveCache(file)
 		catalogDeletes = append(catalogDeletes, file.ID)
 		deleted++
 	}
-	if err := a.catalog.DeleteIDs(r.Context(), catalogDeletes); err != nil {
-		writeJSONError(w, err, http.StatusInternalServerError)
+	if err := flushDeletedMetadata(); err != nil {
+		a.logger.Error("originales eliminados pero catálogo no actualizado", "deleted", deleted, "error", err)
+		writeJSONOperationError(w, errors.New("los originales se eliminaron, pero no se pudo actualizar el catálogo; ejecuta Sincronizar ahora"), http.StatusInternalServerError, deleted)
 		return
-	}
-	if err := a.store.DeleteStarredFileIDs(r.Context(), catalogDeletes); err != nil {
-		a.logger.Warn("no se pudieron limpiar Destacados de archivos eliminados", "error", err)
 	}
 	user := userFromContext(r.Context())
 	_ = a.store.Audit(r.Context(), user.ID, "files_delete", fmt.Sprintf("correcto:%d", deleted), a.clientIP(r))

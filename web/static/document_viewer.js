@@ -15,6 +15,7 @@
   const saveButton = $('[data-document-viewer-save]', dialog);
   const cancelButton = $('[data-document-viewer-cancel]', dialog);
   const downloadButton = $('[data-document-viewer-download]', dialog);
+  const deleteButton = $('[data-document-viewer-delete]', dialog);
   const closeButton = $('[data-document-viewer-close]', dialog);
   const loading = $('[data-document-viewer-loading]', dialog);
   const loadingText = $('[data-document-viewer-loading-text]', dialog);
@@ -265,11 +266,46 @@
 
   const resetSurfaces = () => {
     if (errorBox) errorBox.hidden = true;
-    if (frame) { frame.hidden = true; frame.removeAttribute('src'); }
+    if (frame) { frame.hidden = true; frame.removeAttribute('src'); frame.removeAttribute('srcdoc'); }
     if (markdown) { markdown.hidden = true; markdown.replaceChildren(); }
     if (source) source.hidden = true;
     if (sourceCode) sourceCode.textContent = '';
     if (editor) { editor.hidden = true; editor.value = ''; }
+  };
+
+  const buildIsolatedHTML = (raw) => {
+    const parser = new DOMParser();
+    const parsed = parser.parseFromString(String(raw || ''), 'text/html');
+    parsed.querySelectorAll('script,iframe,frame,frameset,object,embed,applet,base,link').forEach((node) => node.remove());
+    parsed.querySelectorAll('meta[http-equiv]').forEach((node) => node.remove());
+    parsed.querySelectorAll('*').forEach((node) => {
+      [...node.attributes].forEach((attribute) => {
+        const name = attribute.name.toLowerCase();
+        const value = String(attribute.value || '').trim();
+        if (name.startsWith('on') || name === 'ping' || name === 'action' || name === 'formaction' || name === 'target') {
+          node.removeAttribute(attribute.name);
+          return;
+        }
+        if (name === 'href') {
+          if (!value.startsWith('#')) node.removeAttribute(attribute.name);
+          return;
+        }
+        if (name === 'src' || name === 'poster') {
+          if (!/^(data:|blob:)/i.test(value)) node.removeAttribute(attribute.name);
+          return;
+        }
+        if (name === 'srcset') node.removeAttribute(attribute.name);
+      });
+    });
+    const head = parsed.head || parsed.documentElement.insertBefore(parsed.createElement('head'), parsed.body || null);
+    const csp = parsed.createElement('meta');
+    csp.setAttribute('http-equiv', 'Content-Security-Policy');
+    csp.setAttribute('content', "default-src 'none'; script-src 'none'; connect-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; object-src 'none'; frame-src 'none'; child-src 'none'; base-uri 'none'; form-action 'none'");
+    head.prepend(csp);
+    const isolationStyle = parsed.createElement('style');
+    isolationStyle.textContent = 'html,body{min-height:100%;} body{margin:0;}';
+    head.append(isolationStyle);
+    return '<!doctype html>\n' + parsed.documentElement.outerHTML;
   };
 
   const typeLabel = (viewer) => ({ markdown: 'MD', html: 'HTML', text: 'TXT', pdf: 'PDF' }[viewer] || 'DOC');
@@ -291,8 +327,10 @@
       if (markdown) markdown.hidden = false;
     } else if (state.viewer === 'html') {
       if (frame) {
+        // srcdoc + sandbox crea un documento con origen opaco. El HTML del
+        // usuario no comparte DOM, CSS ni contexto de ejecución con Personal Cloud.
         frame.setAttribute('sandbox', '');
-        frame.src = `/archivo/${encodeURIComponent(state.id)}/html?v=${Date.now()}`;
+        frame.srcdoc = buildIsolatedHTML(state.content);
         frame.hidden = false;
       }
     } else if (state.viewer === 'text') {
@@ -470,6 +508,29 @@
       toast(state.starred ? 'Agregado a Destacados' : 'Quitado de Destacados');
     } catch (error) { window.alert(error.message || 'No se pudo actualizar Destacados.'); }
     finally { syncStarButton(false); }
+  });
+  deleteButton?.addEventListener('click', async () => {
+    if (!state.id) return;
+    try {
+      const actions = window.PersonalCloudActions;
+      if (!actions?.deleteFiles) throw new Error('La acción de eliminación todavía no está disponible.');
+      const deleted = await actions.deleteFiles([state.id], { reload: false, source: 'viewer' });
+      if (deleted) {
+        state.openSequence++;
+        state.editing = false;
+        state.dirty = false;
+        resetSurfaces();
+        dialog.close();
+        window.setTimeout(() => window.location.reload(), 180);
+      }
+    } catch (error) { toast(error.message || 'No se pudo eliminar el archivo.'); }
+  });
+  dialog.addEventListener('contextmenu', (event) => {
+    if (!state.id || event.target.closest('textarea,input,select')) return;
+    const actions = window.PersonalCloudActions;
+    if (!actions?.showFileContext) return;
+    event.preventDefault();
+    actions.showFileContext(event.clientX, event.clientY, state.id, false);
   });
   closeButton?.addEventListener('click', close);
   dialog.addEventListener('cancel', (event) => { event.preventDefault(); close(); });

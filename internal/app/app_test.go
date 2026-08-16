@@ -203,6 +203,29 @@ func TestStorageTemplateExposesIndexingActions(t *testing.T) {
 	}
 }
 
+func TestStorageTemplateShowsUnifiedCapacity(t *testing.T) {
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := store.User{Username: "admin", Role: "admin"}
+	data := pageData{
+		Title: "Almacenamiento", User: &user, CSRFToken: "csrf",
+		StorageSummary:    storageSummary{Total: 4000, Used: 2750, Free: 1250, PercentUsed: 69, OnlineUnits: 2},
+		StorageUsageItems: []storageUsageItem{{ID: "v1", Name: "HDD Aula", VirtualRoot: "datos", FSType: "ntfs", Capacity: 4000, Used: 2750, Free: 1250, PercentUsed: 69, Online: true, Mounted: true}},
+	}
+	var out bytes.Buffer
+	if err := renderer.Render(&out, "storage", data); err != nil {
+		t.Fatal(err)
+	}
+	html := out.String()
+	for _, expected := range []string{"Almacenamiento", "Unidades conectadas", "HDD Aula", "usados", "libres", "69%"} {
+		if !strings.Contains(html, expected) {
+			t.Fatalf("el resumen unificado debe renderizar %q", expected)
+		}
+	}
+}
+
 func TestStorageTemplateKeepsUploadOutOfStorageCards(t *testing.T) {
 	renderer, err := webui.NewRenderer()
 	if err != nil {

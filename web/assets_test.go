@@ -322,7 +322,9 @@ func TestDocumentViewerIsEmbeddedAndOffline(t *testing.T) {
 		"renderMarkdown",
 		"/api/archivo/${encodeURIComponent(state.id)}/contenido",
 		"/archivo/${encodeURIComponent(state.id)}/pdf",
-		"/archivo/${encodeURIComponent(state.id)}/html",
+		"buildIsolatedHTML",
+		"frame.srcdoc = buildIsolatedHTML(state.content)",
+		"Content-Security-Policy",
 		"Ctrl+S",
 		"window.PersonalCloudDocumentViewer",
 	} {
@@ -359,6 +361,96 @@ func TestMediaViewerIsGlobalAndReusableAcrossListings(t *testing.T) {
 	for _, expected := range []string{"window.PersonalCloudMediaViewer", "collectPageMediaIDs", "openMediaByID", "[data-download-file-id][data-viewer]"} {
 		if !strings.Contains(js, expected) {
 			t.Fatalf("el visor multimedia no es reutilizable fuera de Galería; falta %q", expected)
+		}
+	}
+}
+
+func TestDeleteActionsAreReusableAndConfirmed(t *testing.T) {
+	layoutData, err := fs.ReadFile(Assets, "layouts/base.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout := string(layoutData)
+	for _, expected := range []string{`{{template "selection-context" .}}`, `{{template "delete-confirm" .}}`} {
+		if !strings.Contains(layout, expected) {
+			t.Fatalf("el layout global debe montar %q", expected)
+		}
+	}
+
+	mediaData, err := fs.ReadFile(Assets, "components/media_viewer.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	docData, err := fs.ReadFile(Assets, "components/document_viewer.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(mediaData), "data-viewer-delete") {
+		t.Fatal("el visor multimedia debe permitir eliminar el elemento abierto")
+	}
+	if !strings.Contains(string(docData), "data-document-viewer-delete") {
+		t.Fatal("el visor de documentos debe permitir eliminar el elemento abierto")
+	}
+
+	jsData, err := fs.ReadFile(Assets, "static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	js := string(jsData)
+	for _, expected := range []string{
+		"confirmDangerousAction",
+		"showSelectionContext(event.clientX, event.clientY)",
+		"await deleteIDs([id], { reload: false, source: 'viewer' })",
+		"Esta acción elimina los originales y no se puede deshacer.",
+		"window.PersonalCloudActions",
+	} {
+		if !strings.Contains(js, expected) {
+			t.Fatalf("eliminación contextual incompleta; falta %q", expected)
+		}
+	}
+}
+
+func TestHTMLViewerUsesOpaqueSandboxedSrcdoc(t *testing.T) {
+	jsData, err := fs.ReadFile(Assets, "static/document_viewer.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	js := string(jsData)
+	for _, expected := range []string{
+		"new DOMParser()",
+		"script,iframe,frame,frameset,object,embed,applet,base",
+		"frame.setAttribute('sandbox', '')",
+		"frame.srcdoc = buildIsolatedHTML(state.content)",
+		"name === 'href'",
+		"name === 'src' || name === 'poster'",
+		"default-src 'none'",
+		"form-action 'none'",
+	} {
+		if !strings.Contains(js, expected) {
+			t.Fatalf("el HTML debe permanecer aislado del DOM de Nube; falta %q", expected)
+		}
+	}
+}
+
+func TestUnifiedStorageUIIsEmbedded(t *testing.T) {
+	sidebarData, err := fs.ReadFile(Assets, "components/sidebar.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	storageData, err := fs.ReadFile(Assets, "pages/storage.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sidebar := string(sidebarData)
+	storage := string(storageData)
+	for _, expected := range []string{"StorageSummary.Used", "StorageSummary.Total", "StorageSummary.Free", "/almacenamiento"} {
+		if !strings.Contains(sidebar, expected) {
+			t.Fatalf("resumen global de almacenamiento incompleto; falta %q", expected)
+		}
+	}
+	for _, expected := range []string{"Unidades conectadas", "StorageUsageItems", "Archivos que más espacio ocupan", "StorageLargestFiles", "data-file-filter-form", `name="tipo"`, `name="modificado"`, `name="fuente"`, "usados", "libres"} {
+		if !strings.Contains(storage, expected) {
+			t.Fatalf("página de almacenamiento incompleta; falta %q", expected)
 		}
 	}
 }

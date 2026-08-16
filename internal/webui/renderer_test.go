@@ -21,19 +21,28 @@ type renderStats struct {
 }
 
 type renderData struct {
-	Title                  string
-	Description            string
-	CurrentPath            string
-	CSRFToken              string
-	Error                  string
-	Info                   string
-	RetryAfter             int
-	User                   *renderUser
-	Stats                  renderStats
-	HomeFolders            []any
-	HomeFiles              []any
-	StorageItems           []any
-	StorageError           string
+	Title          string
+	Description    string
+	CurrentPath    string
+	CSRFToken      string
+	Error          string
+	Info           string
+	RetryAfter     int
+	User           *renderUser
+	Stats          renderStats
+	HomeFolders    []any
+	HomeFiles      []any
+	StorageItems   []any
+	StorageError   string
+	StorageSummary struct {
+		Total       uint64
+		Used        uint64
+		Free        uint64
+		PercentUsed int
+		OnlineUnits int
+	}
+	StorageUsageItems      []any
+	StorageLargestFiles    []any
 	Media                  []any
 	ExplorerItems          []any
 	ExplorerFolders        []any
