@@ -609,6 +609,7 @@ func (a *App) fileInfoAPI(w http.ResponseWriter, r *http.Request) {
 		"size": file.Size, "mod_time": file.ModTime, "indexed_at": file.IndexedAt,
 		"location": location, "storage_name": storageName, "online": online, "starred": starred,
 		"width": file.Width, "height": file.Height, "health": file.Health,
+		"viewer": fileViewerKind(file.Name), "editable": fileViewerEditable(file.Name),
 	})
 }
 

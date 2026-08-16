@@ -39,7 +39,7 @@
     <div class="drive-home-files is-grid" data-home-files>
       <div class="drive-home-list-header" aria-hidden="true"><span>Nombre</span><span>Motivo sugerido</span><span>Propietario</span><span>Ubicación</span><span></span></div>
       {{range .HomeFiles}}
-      <article class="drive-home-file-card{{if .Offline}} is-offline{{end}}{{if eq .Health "damaged"}} is-damaged{{end}}" data-download-file-id="{{.ID}}" data-offline="{{.Offline}}">
+      <article class="drive-home-file-card{{if .Offline}} is-offline{{end}}{{if eq .Health "damaged"}} is-damaged{{end}}" data-download-file-id="{{.ID}}" data-offline="{{.Offline}}"{{if .Viewer}} data-viewer="{{.Viewer}}" data-editable="{{.Editable}}"{{end}}>
         <div class="drive-home-file-head">
           <span class="drive-kind-icon drive-kind-{{.Kind}}">{{template "file-type-icon" .}}</span>
           <a class="drive-home-file-name" href="{{.OpenURL}}" title="{{.Name}}">{{.Name}}</a>

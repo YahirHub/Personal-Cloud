@@ -293,3 +293,41 @@ func TestVendoredFileTypeIconsAreEmbedded(t *testing.T) {
 		}
 	}
 }
+
+func TestDocumentViewerIsEmbeddedAndOffline(t *testing.T) {
+	component, err := fs.ReadFile(Assets, "components/document_viewer.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := string(component)
+	for _, expected := range []string{
+		"data-document-viewer",
+		"data-document-viewer-download",
+		"data-document-viewer-edit",
+		"data-document-viewer-save",
+		"data-document-viewer-star",
+		"sandbox=\"\"",
+	} {
+		if !strings.Contains(template, expected) {
+			t.Fatalf("visor de documentos incompleto; falta %q", expected)
+		}
+	}
+
+	jsData, err := fs.ReadFile(Assets, "static/document_viewer.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	js := string(jsData)
+	for _, expected := range []string{
+		"renderMarkdown",
+		"/api/archivo/${encodeURIComponent(state.id)}/contenido",
+		"/archivo/${encodeURIComponent(state.id)}/pdf",
+		"/archivo/${encodeURIComponent(state.id)}/html",
+		"Ctrl+S",
+		"window.PersonalCloudDocumentViewer",
+	} {
+		if !strings.Contains(js, expected) {
+			t.Fatalf("comportamiento del visor incompleto; falta %q", expected)
+		}
+	}
+}

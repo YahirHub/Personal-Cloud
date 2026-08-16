@@ -17,7 +17,7 @@ func FileKind(name string) string {
 		return "video"
 	case ".mp3", ".flac", ".wav", ".m4a", ".ogg", ".oga", ".opus", ".aac", ".wma", ".aiff", ".aif", ".alac", ".mid", ".midi":
 		return "audio"
-	case ".pdf", ".doc", ".docx", ".docm", ".dot", ".dotx", ".rtf", ".xls", ".xlsx", ".xlsm", ".xlsb", ".csv", ".tsv", ".ppt", ".pptx", ".pptm", ".pps", ".ppsx", ".txt", ".md", ".markdown", ".rst", ".tex", ".log", ".odt", ".ods", ".odp", ".pages", ".numbers", ".key", ".epub", ".mobi", ".azw", ".azw3", ".vcf", ".ics":
+	case ".pdf", ".doc", ".docx", ".docm", ".dot", ".dotx", ".rtf", ".xls", ".xlsx", ".xlsm", ".xlsb", ".csv", ".tsv", ".ppt", ".pptx", ".pptm", ".pps", ".ppsx", ".txt", ".text", ".md", ".markdown", ".mdown", ".mkd", ".rst", ".tex", ".log", ".odt", ".ods", ".odp", ".pages", ".numbers", ".key", ".epub", ".mobi", ".azw", ".azw3", ".vcf", ".ics", ".html", ".htm", ".xhtml":
 		return "document"
 	case ".zip", ".7z", ".rar", ".tar", ".gz", ".tgz", ".bz2", ".tbz", ".tbz2", ".xz", ".txz", ".zst", ".lz", ".lzma", ".cab", ".iso", ".img":
 		return "archive"
@@ -49,11 +49,11 @@ func FileIcon(name, kind string) (key, label string) {
 		return "office", strings.ToUpper(ext)
 	case "md", "markdown", "mdown", "mkd":
 		return "markdown", "MD"
-	case "txt", "log", "rst", "tex":
+	case "txt", "text", "log", "rst", "tex":
 		return "text", strings.ToUpper(ext)
 	case "json", "jsonl", "yaml", "yml", "toml", "xml":
 		return "data", strings.ToUpper(ext)
-	case "html", "htm", "css", "scss", "sass", "less", "js", "mjs", "cjs", "ts", "tsx", "jsx", "vue", "svelte", "php", "py", "pyw", "go", "rs", "java", "kt", "kts", "c", "h", "cpp", "hpp", "cs", "swift", "dart", "rb", "sh", "bash", "zsh", "ps1", "bat", "cmd", "sql", "graphql":
+	case "html", "htm", "xhtml", "css", "scss", "sass", "less", "js", "mjs", "cjs", "ts", "tsx", "jsx", "vue", "svelte", "php", "py", "pyw", "go", "rs", "java", "kt", "kts", "c", "h", "cpp", "hpp", "cs", "swift", "dart", "rb", "sh", "bash", "zsh", "ps1", "bat", "cmd", "sql", "graphql":
 		return "code", strings.ToUpper(ext)
 	case "db", "sqlite", "sqlite3", "mdb", "accdb":
 		return "database", "DB"

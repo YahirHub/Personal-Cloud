@@ -34,6 +34,7 @@ Implementado:
 - Galería `/galeria` que usa la caché interna aunque el disco original esté desmontado y oculta medios de unidades físicamente desconectadas.
 - Filtro compacto por imágenes/video/audio y orden por fecha de archivo, fecha de incorporación o nombre.
 - Visor offline de imagen/video/audio centrado a viewport completo, con navegación ←/→ o A/D, zoom suave W/S y reproductor de video con controles inferiores propios (play, seek, volumen, velocidad, calidad y fullscreen).
+- Visores locales para **Markdown, HTML, TXT y PDF** integrados en la interfaz: Markdown se renderiza sin librerías externas, HTML se muestra en un iframe aislado con scripts/red/formularios bloqueados y PDF usa el visor nativo del navegador con soporte de rangos. Markdown/HTML/TXT se pueden editar y guardar desde el navegador con `Ctrl+S`, control de conflictos y límite de 8 MiB; todos los visores incluyen descarga segura y Destacados.
 - Preferencias locales persistentes del reproductor de video: mute, volumen y velocidad.
 - Calidad de video **Auto**/Original/360p/480p/720p/1080p cuando FFmpeg + libx264 están disponibles; Auto mide una muestra de la ruta real, considera el tamaño del visor y aplica margen de seguridad para elegir resolución. Las variantes se generan bajo demanda y se cachean localmente.
 - Descarga por clic derecho mediante ticket AES-GCM opaco, ligado al usuario y de vida corta; las URLs no revelan ruta, storage ID ni nombre del archivo.

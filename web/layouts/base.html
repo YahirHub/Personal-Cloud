@@ -10,13 +10,14 @@
   {{if .User}}<meta name="csrf-token" content="{{.CSRFToken}}">{{end}}
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/app.js" defer></script>
+  <script src="/static/document_viewer.js" defer></script>
 </head>
 <body class="{{if .User}}app-body{{else}}auth-body{{end}}">
   {{if .User}}
     {{template "topbar" .}}
     {{template "sidebar" .}}
     <main class="app-main">{{template "content" .}}</main>
-    {{template "download-context" .}}{{template "selection-menu" .}}{{template "unit-context" .}}{{template "new-context" .}}
+    {{template "download-context" .}}{{template "selection-menu" .}}{{template "unit-context" .}}{{template "new-context" .}}{{template "document-viewer" .}}
   {{else}}
     <main class="auth-main">{{template "content" .}}</main>
   {{end}}

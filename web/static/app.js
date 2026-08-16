@@ -486,10 +486,16 @@
     hideDownloadMenu();
     try { await startSecureDownload(id); } catch (error) { window.alert(error.message || 'No se pudo descargar el archivo.'); }
   });
-  $('[data-context-open]', downloadMenu)?.addEventListener('click', () => {
+  $('[data-context-open]', downloadMenu)?.addEventListener('click', async () => {
     const id = downloadTargetID;
     hideDownloadMenu();
-    if (id) window.location.assign(`/archivo/${encodeURIComponent(id)}/original`);
+    if (!id) return;
+    try {
+      const handled = window.PersonalCloudDocumentViewer ? await window.PersonalCloudDocumentViewer.open(id) : false;
+      if (!handled) window.location.assign(`/archivo/${encodeURIComponent(id)}/original`);
+    } catch (error) {
+      showToast(error.message || 'No se pudo abrir el archivo');
+    }
   });
   const fileInfoDialog = $('[data-file-info-dialog]');
   $('[data-context-info]', downloadMenu)?.addEventListener('click', async () => {
@@ -1486,6 +1492,8 @@
       anchor.dataset.selectableFile = item.id;
       anchor.dataset.offline = String(Boolean(item.offline));
       anchor.dataset.starred = String(Boolean(item.starred));
+      if (item.viewer) anchor.dataset.viewer = item.viewer;
+      if (item.viewer) anchor.dataset.editable = String(Boolean(item.editable));
     }
     const check = document.createElement('span');
     check.className = 'selection-check file-selection-check';

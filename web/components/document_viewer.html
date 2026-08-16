@@ -1,0 +1,34 @@
+{{define "document-viewer"}}
+<dialog class="document-viewer" data-document-viewer aria-label="Visor de documentos">
+  <section class="document-viewer-shell" data-document-viewer-shell>
+    <header class="document-viewer-toolbar">
+      <div class="document-viewer-title">
+        <span class="document-viewer-type" data-document-viewer-type>DOC</span>
+        <div><strong data-document-viewer-title>Documento</strong><small data-document-viewer-status>Preparando vista…</small></div>
+      </div>
+      <div class="document-viewer-tabs" data-document-viewer-tabs hidden>
+        <button class="document-viewer-tab is-active" type="button" data-document-viewer-preview-tab>Vista</button>
+        <button class="document-viewer-tab" type="button" data-document-viewer-source-tab>Código</button>
+      </div>
+      <div class="document-viewer-actions">
+        <button class="icon-button document-viewer-star" type="button" data-document-viewer-star aria-label="Agregar a Destacados" title="Agregar a Destacados">{{template "icon-star" .}}</button>
+        <button class="button button-secondary" type="button" data-document-viewer-edit hidden>{{template "icon-rename" .}} Editar</button>
+        <button class="button button-primary" type="button" data-document-viewer-save hidden>{{template "icon-check" .}} Guardar</button>
+        <button class="button button-ghost" type="button" data-document-viewer-cancel hidden>Cancelar</button>
+        <button class="button button-secondary" type="button" data-document-viewer-download>{{template "icon-download" .}} Descargar</button>
+        <button class="icon-button" type="button" data-document-viewer-close aria-label="Cerrar" title="Cerrar">{{template "icon-close" .}}</button>
+      </div>
+    </header>
+
+    <div class="document-viewer-body">
+      <div class="document-viewer-loading" data-document-viewer-loading hidden aria-live="polite"><span class="viewer-loading-spinner" aria-hidden="true"></span><strong data-document-viewer-loading-text>Cargando…</strong></div>
+      <div class="document-viewer-error" data-document-viewer-error hidden></div>
+      <iframe class="document-viewer-frame" data-document-viewer-frame hidden sandbox="" referrerpolicy="no-referrer" title="Vista del documento"></iframe>
+      <article class="document-viewer-markdown" data-document-viewer-markdown hidden></article>
+      <pre class="document-viewer-source" data-document-viewer-source hidden><code data-document-viewer-source-code></code></pre>
+      <textarea class="document-viewer-editor" data-document-viewer-editor hidden spellcheck="false" aria-label="Contenido editable del archivo"></textarea>
+    </div>
+    <footer class="document-viewer-footer"><span data-document-viewer-footnote>Esc para cerrar</span><span data-document-viewer-bytes></span></footer>
+  </section>
+</dialog>
+{{end}}

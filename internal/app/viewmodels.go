@@ -41,6 +41,8 @@ type explorerItem struct {
 	Starred      bool      `json:"starred,omitempty"`
 	IconKey      string    `json:"icon_key,omitempty"`
 	IconLabel    string    `json:"icon_label,omitempty"`
+	Viewer       string    `json:"viewer,omitempty"`
+	Editable     bool      `json:"editable,omitempty"`
 }
 
 type breadcrumbItem struct {
@@ -99,6 +101,8 @@ type homeFileItem struct {
 	Health       string
 	IconKey      string
 	IconLabel    string
+	Viewer       string
+	Editable     bool
 }
 
 func minInt(a, b int) int {
@@ -113,6 +117,8 @@ func decorateExplorerFile(item *explorerItem) {
 		return
 	}
 	item.IconKey, item.IconLabel = storage.FileIcon(item.Name, item.Kind)
+	item.Viewer = fileViewerKind(item.Name)
+	item.Editable = fileViewerEditable(item.Name)
 }
 
 func decorateHomeFile(item *homeFileItem) {
@@ -120,6 +126,8 @@ func decorateHomeFile(item *homeFileItem) {
 		return
 	}
 	item.IconKey, item.IconLabel = storage.FileIcon(item.Name, item.Kind)
+	item.Viewer = fileViewerKind(item.Name)
+	item.Editable = fileViewerEditable(item.Name)
 }
 
 func splitExplorerItems(items []explorerItem) (folders, files []explorerItem) {

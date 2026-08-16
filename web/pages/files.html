@@ -122,7 +122,7 @@
 {{end}}
 
 {{define "drive-file-item"}}
-<a class="file-row{{if .Offline}} is-offline{{end}}{{if eq .Health "damaged"}} is-damaged{{end}}" href="{{.DownloadURL}}" role="listitem" data-selectable-file="{{.ID}}" data-download-file-id="{{.ID}}" data-offline="{{.Offline}}" data-starred="{{.Starred}}">
+<a class="file-row{{if .Offline}} is-offline{{end}}{{if eq .Health "damaged"}} is-damaged{{end}}" href="{{.DownloadURL}}" role="listitem" data-selectable-file="{{.ID}}" data-download-file-id="{{.ID}}" data-offline="{{.Offline}}" data-starred="{{.Starred}}"{{if .Viewer}} data-viewer="{{.Viewer}}" data-editable="{{.Editable}}"{{end}}>
   <span class="selection-check file-selection-check" aria-hidden="true">{{template "icon-check" .}}</span>
   <span class="file-card-preview">{{if .ThumbnailURL}}<img src="{{.ThumbnailURL}}" alt="" loading="lazy">{{else}}<span class="drive-preview-placeholder drive-kind-{{.Kind}}">{{template "file-type-icon" .}}</span>{{end}}</span>
   <span class="file-kind drive-kind-{{.Kind}}">{{template "file-type-icon" .}}</span>
