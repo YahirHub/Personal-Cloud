@@ -112,13 +112,31 @@
 </dialog>
 
 <dialog class="upload-dialog" data-upload-dialog>
-  <form method="post" action="/archivos/subir" enctype="multipart/form-data" class="dialog-card">
-    <div class="dialog-head"><div><div class="eyebrow">Nuevo</div><h2>{{if eq .ExplorerPath "/"}}Subir a Mi unidad{{else}}Subir a {{.ExplorerPath}}{{end}}</h2></div><button class="icon-button" type="button" data-close-upload aria-label="Cerrar">{{template "icon-close" .}}</button></div>
+  <form method="post" action="/archivos/subir" enctype="multipart/form-data" class="dialog-card upload-dialog-card" data-upload-form data-upload-max-files="{{.MaxUploadBatchFiles}}">
+    <div class="dialog-head"><div><div class="eyebrow">Nuevo</div><h2>Subir archivos</h2></div><button class="icon-button" type="button" data-close-upload aria-label="Cerrar">{{template "icon-close" .}}</button></div>
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="current_path" value="{{.ExplorerPath}}">
-    <div class="upload-destination-summary"><div><small>Ubicación</small><strong data-upload-destination-label>{{if eq .ExplorerPath "/"}}Automático · el sistema decide{{else}}{{.ExplorerPath}}{{end}}</strong></div><button class="button button-secondary button-small" type="button" data-upload-choose-location>Elegir ubicación</button></div>
-    <div class="upload-location-panel" data-upload-location-panel hidden>
+    <input type="hidden" name="destination_root" value="" data-upload-root-value>
+    <input type="hidden" name="target_dir" value="" data-upload-target-value>
+
+    <div class="upload-picker" data-upload-picker tabindex="0" role="button" aria-controls="upload-files" aria-label="Seleccionar archivos para subir">
+      <span class="upload-picker-icon">{{template "icon-upload" .}}</span>
+      <strong>Arrastra y suelta tus archivos aquí</strong>
+      <small>o selecciónalos desde tu dispositivo</small>
+      <label class="button button-primary" for="upload-files">Seleccionar archivos</label>
+    </div>
+    <div class="upload-selection" data-upload-selection hidden>
+      <div><strong data-upload-selection-title>Archivos seleccionados</strong><small data-upload-selection-size></small></div>
+      <div class="upload-selection-list" data-upload-selection-list></div>
+      <button class="button button-ghost button-small" type="button" data-upload-clear>Quitar selección</button>
+    </div>
+
+    <button class="upload-advanced-toggle" type="button" data-upload-advanced-toggle aria-expanded="false">
+      <span>{{template "icon-settings" .}} Avanzados</span><span class="upload-advanced-chevron" aria-hidden="true">⌄</span>
+    </button>
+    <div class="upload-advanced-panel" data-upload-advanced-panel hidden>
+      <div class="upload-destination-summary"><div><small>Ubicación</small><strong data-upload-destination-label>{{if eq .ExplorerPath "/"}}Automático · el sistema decide{{else}}{{.ExplorerPath}}{{end}}</strong></div></div>
       <label>Unidad
-        <select name="destination_root" data-upload-root>
+        <select data-upload-root>
           <option value="">{{if eq .ExplorerPath "/"}}Automático · usar la mejor unidad{{else}}Ubicación actual{{end}}</option>
           {{range .MoveDestinations}}{{if and .Online (not .ReadOnly)}}<option value="{{.VirtualRoot}}">{{.Name}} · /{{.VirtualRoot}}</option>{{end}}{{end}}
         </select>
@@ -127,10 +145,11 @@
         <div class="folder-picker-head"><div><small>Carpeta elegida</small><strong data-upload-folder-current>/</strong></div><button class="button button-ghost button-small" type="button" data-upload-folder-up>Subir nivel</button></div>
         <div class="folder-list" data-upload-folder-list><span class="muted">Selecciona una unidad para navegar sus carpetas.</span></div>
       </div>
-      <label>Ruta relativa<input name="target_dir" data-upload-target-dir placeholder="Ej. Tareas/Matemáticas" autocomplete="off"><small>Puedes navegar las carpetas o escribir una ruta. Si no existe, se creará de forma segura.</small></label>
+      <label>Ruta relativa<input data-upload-target-dir placeholder="Ej. Tareas/Matemáticas" autocomplete="off"><small>Puedes navegar las carpetas o escribir una ruta. Si no existe, se creará de forma segura.</small></label>
     </div>
-    <label>Archivo<input type="file" name="file" required></label>
-    <small>Máximo: {{formatBytes .MaxUploadBytes}}. Si no eliges una unidad, Nube conserva el comportamiento automático.</small><button class="button button-primary full" type="submit">Subir</button>
+    <input class="sr-only" id="upload-files" type="file" name="file" multiple required data-upload-input>
+    <small class="upload-limit">Máximo por archivo: {{formatBytes .MaxUploadBytes}}. Puedes seleccionar hasta {{.MaxUploadBatchFiles}} archivos por tanda.</small>
+    <button class="button button-primary full" type="submit" data-upload-submit disabled>Subir archivos</button>
   </form>
 </dialog>
 {{end}}

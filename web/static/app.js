@@ -314,20 +314,35 @@
   });
   document.addEventListener('click', (event) => { if (!event.target.closest('[data-new-menu]') && !event.target.closest('[data-global-new]')) hideNewMenu(); });
 
-  // Selector explícito de destino para Subir: Automático sigue siendo el valor
-  // predeterminado, pero el usuario puede elegir unidad y navegar carpetas.
-  const uploadLocationPanel = $('[data-upload-location-panel]', uploadDialog);
+  // Subida tipo Drive: por defecto solo se muestra el selector/drag & drop.
+  // Unidad y carpeta viven bajo Avanzados y siguen viajando antes del stream.
+  const uploadForm = $('[data-upload-form]', uploadDialog);
+  const uploadMaxFiles = Math.max(1, Number.parseInt(uploadForm?.dataset.uploadMaxFiles || '100', 10) || 100);
+  const uploadAdvancedToggle = $('[data-upload-advanced-toggle]', uploadDialog);
+  const uploadAdvancedPanel = $('[data-upload-advanced-panel]', uploadDialog);
   const uploadRoot = $('[data-upload-root]', uploadDialog);
+  const uploadRootValue = $('[data-upload-root-value]', uploadDialog);
   const uploadTargetDir = $('[data-upload-target-dir]', uploadDialog);
+  const uploadTargetValue = $('[data-upload-target-value]', uploadDialog);
   const uploadFolderPicker = $('[data-upload-folder-picker]', uploadDialog);
   const uploadFolderList = $('[data-upload-folder-list]', uploadDialog);
   const uploadFolderCurrent = $('[data-upload-folder-current]', uploadDialog);
   const uploadDestinationLabel = $('[data-upload-destination-label]', uploadDialog);
+  const uploadPicker = $('[data-upload-picker]', uploadDialog);
+  const uploadInput = $('[data-upload-input]', uploadDialog);
+  const uploadSelection = $('[data-upload-selection]', uploadDialog);
+  const uploadSelectionTitle = $('[data-upload-selection-title]', uploadDialog);
+  const uploadSelectionSize = $('[data-upload-selection-size]', uploadDialog);
+  const uploadSelectionList = $('[data-upload-selection-list]', uploadDialog);
+  const uploadSubmit = $('[data-upload-submit]', uploadDialog);
   let uploadFolderPath = '';
-  const syncUploadDestinationLabel = () => {
-    if (!uploadDestinationLabel) return;
+
+  const syncUploadDestination = () => {
     const root = String(uploadRoot?.value || '').trim();
     const dir = String(uploadTargetDir?.value || '').trim().replace(/^\/+|\/+$/g, '');
+    if (uploadRootValue) uploadRootValue.value = root;
+    if (uploadTargetValue) uploadTargetValue.value = dir;
+    if (!uploadDestinationLabel) return;
     if (!root) {
       const currentDrop = $('[data-drive-files-page]');
       uploadDestinationLabel.textContent = currentDrop?.dataset.currentPath && currentDrop.dataset.currentPath !== '/'
@@ -337,11 +352,12 @@
     }
     uploadDestinationLabel.textContent = `/${root}${dir ? `/${dir}` : ''}`;
   };
+
   const loadUploadFolders = async (folderPath = '') => {
     const root = String(uploadRoot?.value || '').trim();
     uploadFolderPath = String(folderPath || '').replace(/^\/+|\/+$/g, '');
     if (uploadTargetDir) uploadTargetDir.value = uploadFolderPath;
-    syncUploadDestinationLabel();
+    syncUploadDestination();
     if (!root || !uploadFolderList || !uploadFolderPicker) {
       if (uploadFolderPicker) uploadFolderPicker.hidden = true;
       return;
@@ -373,24 +389,114 @@
       const failed = document.createElement('span'); failed.className = 'muted'; failed.textContent = error.message || 'No se pudieron cargar las carpetas.'; uploadFolderList.append(failed);
     }
   };
-  $('[data-upload-choose-location]', uploadDialog)?.addEventListener('click', () => {
-    if (!uploadLocationPanel) return;
-    uploadLocationPanel.hidden = !uploadLocationPanel.hidden;
-    if (!uploadLocationPanel.hidden && uploadRoot?.value) loadUploadFolders(uploadTargetDir?.value || '');
+
+  uploadAdvancedToggle?.addEventListener('click', () => {
+    if (!uploadAdvancedPanel) return;
+    const opening = uploadAdvancedPanel.hidden;
+    uploadAdvancedPanel.hidden = !opening;
+    uploadAdvancedToggle.setAttribute('aria-expanded', opening ? 'true' : 'false');
+    if (opening && uploadRoot?.value) loadUploadFolders(uploadTargetDir?.value || '');
   });
   uploadRoot?.addEventListener('change', () => {
     uploadFolderPath = '';
     if (uploadTargetDir) uploadTargetDir.value = '';
     loadUploadFolders('');
-    syncUploadDestinationLabel();
+    syncUploadDestination();
   });
-  uploadTargetDir?.addEventListener('input', () => { uploadFolderPath = uploadTargetDir.value.trim().replace(/^\/+|\/+$/g, ''); syncUploadDestinationLabel(); });
+  uploadTargetDir?.addEventListener('input', () => {
+    uploadFolderPath = uploadTargetDir.value.trim().replace(/^\/+|\/+$/g, '');
+    syncUploadDestination();
+  });
   $('[data-upload-folder-up]', uploadDialog)?.addEventListener('click', () => {
     const parts = uploadFolderPath.split('/').filter(Boolean); parts.pop(); loadUploadFolders(parts.join('/'));
   });
-  syncUploadDestinationLabel();
+  syncUploadDestination();
 
-  // Arrastrar y soltar archivos sobre Mi unidad o una carpeta, como en Drive.
+  const renderUploadSelection = () => {
+    const files = [...(uploadInput?.files || [])];
+    if (uploadSelection) uploadSelection.hidden = files.length === 0;
+    if (uploadSubmit) {
+      uploadSubmit.disabled = files.length === 0 || files.length > uploadMaxFiles;
+      uploadSubmit.textContent = files.length ? `Subir ${files.length} archivo${files.length === 1 ? '' : 's'}` : 'Subir archivos';
+    }
+    if (uploadSelectionTitle) uploadSelectionTitle.textContent = files.length === 1 ? files[0].name : `${files.length} archivos seleccionados`;
+    if (uploadSelectionSize) {
+      const total = files.reduce((sum, file) => sum + Number(file.size || 0), 0);
+      uploadSelectionSize.textContent = `${formatBytes(total)} en total${files.length > uploadMaxFiles ? ` · máximo ${uploadMaxFiles} archivos por tanda` : ''}`;
+    }
+    if (uploadSelectionList) {
+      uploadSelectionList.replaceChildren();
+      files.slice(0, 12).forEach((file) => {
+        const item = document.createElement('span'); item.className = 'upload-selection-item'; item.title = file.name; item.textContent = file.name; uploadSelectionList.append(item);
+      });
+      if (files.length > 12) {
+        const more = document.createElement('span'); more.className = 'upload-selection-item'; more.textContent = `+${files.length - 12} más`; uploadSelectionList.append(more);
+      }
+    }
+  };
+
+  const assignUploadFiles = (files) => {
+    if (!uploadInput) return;
+    const selected = [...files].filter((file) => file && file.name);
+    try {
+      const transfer = new DataTransfer();
+      selected.forEach((file) => transfer.items.add(file));
+      uploadInput.files = transfer.files;
+    } catch (_) {
+      // Navegadores antiguos no permiten asignar FileList; el selector normal sigue disponible.
+      showToast('Tu navegador no permite soltar archivos aquí. Usa Seleccionar archivos.');
+      return;
+    }
+    renderUploadSelection();
+  };
+
+  uploadInput?.addEventListener('change', renderUploadSelection);
+  $('[data-upload-clear]', uploadDialog)?.addEventListener('click', () => {
+    if (uploadInput) uploadInput.value = '';
+    renderUploadSelection();
+  });
+  uploadPicker?.addEventListener('click', (event) => {
+    if (event.target.closest('label')) return;
+    uploadInput?.click();
+  });
+  uploadPicker?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault(); uploadInput?.click();
+  });
+  ['dragenter', 'dragover'].forEach((name) => uploadPicker?.addEventListener(name, (event) => {
+    if (!event.dataTransfer?.types?.includes('Files')) return;
+    event.preventDefault(); event.stopPropagation();
+    uploadPicker.classList.add('is-dragging');
+    event.dataTransfer.dropEffect = 'copy';
+  }));
+  ['dragleave', 'dragend'].forEach((name) => uploadPicker?.addEventListener(name, (event) => {
+    event.preventDefault(); event.stopPropagation(); uploadPicker.classList.remove('is-dragging');
+  }));
+  uploadPicker?.addEventListener('drop', (event) => {
+    event.preventDefault(); event.stopPropagation(); uploadPicker.classList.remove('is-dragging');
+    assignUploadFiles(event.dataTransfer?.files || []);
+  });
+  uploadForm?.addEventListener('submit', (event) => {
+    const count = uploadInput?.files?.length || 0;
+    if (!count) { event.preventDefault(); showToast('Selecciona al menos un archivo.'); return; }
+    if (count > uploadMaxFiles) { event.preventDefault(); showToast(`Selecciona como máximo ${uploadMaxFiles} archivos por tanda.`); return; }
+    syncUploadDestination();
+    if (uploadSubmit) { uploadSubmit.disabled = true; uploadSubmit.textContent = `Subiendo ${count} archivo${count === 1 ? '' : 's'}…`; }
+  });
+  renderUploadSelection();
+  uploadDialog?.addEventListener('close', () => {
+    if (uploadAdvancedPanel) uploadAdvancedPanel.hidden = true;
+    uploadAdvancedToggle?.setAttribute('aria-expanded', 'false');
+    if (uploadRoot) uploadRoot.value = '';
+    if (uploadTargetDir) uploadTargetDir.value = '';
+    if (uploadInput) uploadInput.value = '';
+    uploadFolderPath = '';
+    if (uploadFolderPicker) uploadFolderPicker.hidden = true;
+    syncUploadDestination();
+    renderUploadSelection();
+  });
+
+  // Arrastrar y soltar sobre Mi unidad o una carpeta usa el mismo endpoint por lotes.
   const filesPageDrop = $('[data-drive-files-page]');
   const dropOverlay = $('[data-drop-overlay]');
   if (filesPageDrop?.dataset.uploadDrop === 'true') {
@@ -413,24 +519,23 @@
       const files = [...(event.dataTransfer?.files || [])].filter((file) => file && file.name);
       hideDrop();
       if (!files.length) return;
-      const currentPath = filesPageDrop.dataset.currentPath || '/';
-      let uploaded = 0;
-      for (const file of files) {
-        const body = new FormData();
-        body.append('csrf_token', csrfToken);
-        body.append('current_path', currentPath);
-        body.append('target_dir', '');
-        body.append('file', file, file.name);
-        try {
-          showToast(`Subiendo ${uploaded + 1} de ${files.length}: ${file.name}`);
-          const response = await fetch('/archivos/subir', { method: 'POST', body, redirect: 'follow' });
-          const finalURL = new URL(response.url, window.location.origin);
-          const uploadError = finalURL.searchParams.get('error');
-          if (!response.ok || uploadError) throw new Error(uploadError || `No se pudo subir ${file.name}`);
-          uploaded++;
-        } catch (error) { showToast(error.message || `No se pudo subir ${file.name}`); break; }
-      }
-      if (uploaded) { showToast(`${uploaded} archivo${uploaded === 1 ? '' : 's'} subido${uploaded === 1 ? '' : 's'}`); window.setTimeout(() => window.location.reload(), 420); }
+      if (files.length > uploadMaxFiles) { showToast(`Puedes subir hasta ${uploadMaxFiles} archivos por tanda.`); return; }
+      const body = new FormData();
+      body.append('csrf_token', csrfToken);
+      body.append('current_path', filesPageDrop.dataset.currentPath || '/');
+      body.append('destination_root', '');
+      body.append('target_dir', '');
+      files.forEach((file) => body.append('file', file, file.name));
+      try {
+        showToast(`Subiendo ${files.length} archivo${files.length === 1 ? '' : 's'}…`);
+        const response = await fetch('/archivos/subir', { method: 'POST', body, redirect: 'follow' });
+        const finalURL = new URL(response.url, window.location.origin);
+        const uploadError = finalURL.searchParams.get('error');
+        const uploadOK = finalURL.searchParams.get('ok');
+        if (!response.ok || (!uploadOK && uploadError)) throw new Error(uploadError || 'No se pudieron subir los archivos.');
+        showToast(uploadError ? `${uploadOK || 'Subida parcial'} · ${uploadError}` : (uploadOK || 'Archivos subidos'));
+        window.setTimeout(() => window.location.reload(), 220);
+      } catch (error) { showToast(error.message || 'No se pudieron subir los archivos.'); }
     });
   }
   const positionUnitMenu = (x, y) => {

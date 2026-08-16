@@ -84,6 +84,7 @@ type renderData struct {
 	FileFilterAction       string
 	FileFilterCount        int
 	MaxUploadBytes         int64
+	MaxUploadBatchFiles    int
 	MoveDestinations       []struct {
 		ID, Name, VirtualRoot, Category string
 		Online, ReadOnly                bool

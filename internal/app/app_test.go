@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -169,6 +170,26 @@ func TestBrowseCatalogDerivesFoldersWithoutMounting(t *testing.T) {
 	agosto := browseCatalog(files, "2026/Agosto", view)
 	if len(agosto) != 1 || agosto[0].Name != "a.jpg" || agosto[0].DownloadURL == "" {
 		t.Fatalf("archivo catalogado inesperado: %+v", agosto)
+	}
+}
+
+func TestVirtualRootItemsShowsImmediateCatalogUpsert(t *testing.T) {
+	catalogStore, err := catalog.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer catalogStore.Close()
+	file := catalog.File{
+		ID: catalog.StableID("volume-1", "foto-recien-subida.jpg"), StorageID: "volume-1", VirtualRoot: "Clase",
+		RelativePath: "foto-recien-subida.jpg", Name: "foto-recien-subida.jpg", Kind: "image", Size: 42, ModTime: time.Now().UTC(),
+	}
+	if err := catalogStore.UpsertBatch(context.Background(), []catalog.File{file}); err != nil {
+		t.Fatal(err)
+	}
+	a := &App{catalog: catalogStore}
+	items := a.virtualRootItems([]storage.View{{ID: "volume-1", Name: "USB Clase", VirtualRoot: "Clase", Registered: true, Online: true}})
+	if len(items) != 1 || items[0].ID != file.ID || items[0].Name != file.Name {
+		t.Fatalf("Mi unidad debe reflejar inmediatamente la entrada recién incorporada al catálogo: %+v", items)
 	}
 }
 
@@ -647,7 +668,7 @@ func TestFileListingURLPreservesDriveFilters(t *testing.T) {
 	}
 }
 
-func TestUploadDialogAllowsExplicitUnitAndFolder(t *testing.T) {
+func TestUploadDialogDefaultsToMultiplePickerAndKeepsDestinationUnderAdvanced(t *testing.T) {
 	renderer, err := webui.NewRenderer()
 	if err != nil {
 		t.Fatal(err)
@@ -655,7 +676,8 @@ func TestUploadDialogAllowsExplicitUnitAndFolder(t *testing.T) {
 	user := store.User{Username: "admin", Role: "admin"}
 	data := pageData{
 		Title: "Mi unidad", CurrentPath: "/archivos", User: &user, CSRFToken: "csrf", MaxUploadBytes: 1024,
-		ExplorerPath: "/", ExplorerCanWrite: true, ListingMode: "infinito",
+		MaxUploadBatchFiles: maxUploadBatchFiles,
+		ExplorerPath:        "/", ExplorerCanWrite: true, ListingMode: "infinito",
 		MoveDestinations: []moveDestination{{Name: "USB Clase", VirtualRoot: "USB", Online: true}},
 	}
 	var out bytes.Buffer
@@ -663,15 +685,27 @@ func TestUploadDialogAllowsExplicitUnitAndFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	html := out.String()
-	for _, want := range []string{`data-upload-choose-location`, `name="destination_root"`, `data-upload-folder-picker`, `data-upload-target-dir`, `Automático · usar la mejor unidad`, `USB Clase`} {
+	for _, want := range []string{`data-upload-picker`, `type="file" name="file" multiple`, `data-upload-advanced-toggle`, `data-upload-advanced-panel hidden`, `name="destination_root"`, `data-upload-folder-picker`, `data-upload-target-dir`, `Automático · usar la mejor unidad`, `USB Clase`} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("selector de destino de subida incompleto: falta %q", want)
 		}
+	}
+	if strings.Contains(html, `data-upload-location-panel`) || strings.Contains(html, `data-upload-choose-location`) {
+		t.Fatal("la ubicación no debe ocupar la vista principal del diálogo; debe vivir bajo Avanzados")
 	}
 	rootPos := strings.Index(html, `name="destination_root"`)
 	filePos := strings.Index(html, `name="file"`)
 	if rootPos < 0 || filePos < 0 || rootPos >= filePos {
 		t.Fatalf("destination_root debe viajar antes del stream del archivo: root=%d file=%d", rootPos, filePos)
+	}
+}
+
+func TestUploadBatchRequestLimitCoversMultipleFiles(t *testing.T) {
+	const perFile = int64(10 << 20)
+	got := uploadBatchRequestLimit(perFile)
+	wantMinimum := perFile * maxUploadBatchFiles
+	if got < wantMinimum {
+		t.Fatalf("límite por lote=%d, debe cubrir al menos %d", got, wantMinimum)
 	}
 }
 

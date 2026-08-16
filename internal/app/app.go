@@ -113,6 +113,7 @@ type pageData struct {
 	FileFilterAction       string
 	FileFilterCount        int
 	MaxUploadBytes         int64
+	MaxUploadBatchFiles    int
 	Settings               store.AppSettings
 	SettingsSyncText       string
 	MoveDestinations       []moveDestination

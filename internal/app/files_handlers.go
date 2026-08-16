@@ -1,12 +1,16 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,6 +19,8 @@ import (
 	"personalcloud/internal/catalog"
 	storagepkg "personalcloud/internal/storage"
 )
+
+const maxUploadBatchFiles = 100
 
 type explorerFilter struct {
 	Kind     string
@@ -176,7 +182,8 @@ func (a *App) fileCollectionGet(w http.ResponseWriter, r *http.Request, collecti
 		User: user, ExplorerPath: "/", ExplorerItems: items, ExplorerCanWrite: hasAutoUploadTarget(views),
 		Breadcrumbs: []breadcrumbItem{{Name: title, URL: r.URL.Path}}, ListingMode: mode,
 		MoveDestinations: a.moveDestinations(r.Context()), MaxUploadBytes: a.cfg.MaxUploadBytes,
-		FileCollection: collection, FileCollectionTitle: title, FileCollectionSubtitle: subtitle,
+		MaxUploadBatchFiles: maxUploadBatchFiles,
+		FileCollection:      collection, FileCollectionTitle: title, FileCollectionSubtitle: subtitle,
 		FileTypeFilter: filter.Kind, FileModifiedFilter: filter.Modified, FileSourceFilter: filter.Source,
 		FileFilterAction: r.URL.Path, FileFilterCount: explorerFilterCount(filter),
 	})
@@ -206,17 +213,18 @@ func (a *App) filesGet(w http.ResponseWriter, r *http.Request) {
 	stars, _ := a.store.StarredFileIDs(r.Context(), user.ID)
 
 	data := a.csrfData(w, r, pageData{
-		Title:            "Mi unidad",
-		Description:      "Explora el namespace virtual sin mantener todas las unidades montadas.",
-		CurrentPath:      "/archivos",
-		User:             user,
-		ExplorerPath:     current,
-		Breadcrumbs:      explorerBreadcrumbs(current),
-		MaxUploadBytes:   a.cfg.MaxUploadBytes,
-		ListingMode:      mode,
-		ListingBaseURL:   r.URL.Path,
-		MoveDestinations: a.moveDestinations(r.Context()),
-		FileTypeFilter:   filter.Kind, FileModifiedFilter: filter.Modified, FileSourceFilter: filter.Source,
+		Title:               "Mi unidad",
+		Description:         "Explora el namespace virtual sin mantener todas las unidades montadas.",
+		CurrentPath:         "/archivos",
+		User:                user,
+		ExplorerPath:        current,
+		Breadcrumbs:         explorerBreadcrumbs(current),
+		MaxUploadBytes:      a.cfg.MaxUploadBytes,
+		MaxUploadBatchFiles: maxUploadBatchFiles,
+		ListingMode:         mode,
+		ListingBaseURL:      r.URL.Path,
+		MoveDestinations:    a.moveDestinations(r.Context()),
+		FileTypeFilter:      filter.Kind, FileModifiedFilter: filter.Modified, FileSourceFilter: filter.Source,
 		FileFilterAction: r.URL.Path, FileFilterCount: explorerFilterCount(filter),
 	})
 	searchQuery := strings.TrimSpace(r.URL.Query().Get("q"))
@@ -426,7 +434,7 @@ func (a *App) filesListAPI(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) filesUploadPost(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, a.cfg.MaxUploadBytes+multipartOverhead)
+	r.Body = http.MaxBytesReader(w, r.Body, uploadBatchRequestLimit(a.cfg.MaxUploadBytes))
 	reader, err := r.MultipartReader()
 	if err != nil {
 		redirectFilesError(w, r, "/", errors.New("formulario de subida inválido"))
@@ -435,31 +443,34 @@ func (a *App) filesUploadPost(w http.ResponseWriter, r *http.Request) {
 
 	current := "/"
 	var csrfToken, targetDir, destinationRoot string
-	var uploaded bool
-	var destinationStorageID string
+	uploaded := 0
+	attempted := 0
+	failed := make([]string, 0)
+	storageIDs := make(map[string]struct{})
 	for {
 		part, nextErr := reader.NextPart()
 		if errors.Is(nextErr, io.EOF) {
 			break
 		}
 		if nextErr != nil {
-			redirectFilesError(w, r, current, errors.New("no se pudo leer la subida"))
-			return
+			failed = append(failed, "no se pudo leer el resto de la subida")
+			break
 		}
+		partErr := error(nil)
 		switch part.FormName() {
 		case "csrf_token":
-			csrfToken, err = readSmallPart(part, 4096)
+			csrfToken, partErr = readSmallPart(part, 4096)
 		case "current_path":
 			var value string
-			value, err = readSmallPart(part, 4096)
-			if err == nil {
-				current, err = normalizeExplorerPath(value)
+			value, partErr = readSmallPart(part, 4096)
+			if partErr == nil {
+				current, partErr = normalizeExplorerPath(value)
 			}
 		case "destination_root":
-			destinationRoot, err = readSmallPart(part, 4096)
+			destinationRoot, partErr = readSmallPart(part, 4096)
 			destinationRoot = strings.Trim(strings.TrimSpace(destinationRoot), "/")
 		case "target_dir":
-			targetDir, err = readSmallPart(part, 4096)
+			targetDir, partErr = readSmallPart(part, 4096)
 			targetDir = strings.TrimSpace(targetDir)
 		case "file":
 			if !a.validCSRFValue(r, csrfToken) {
@@ -467,51 +478,138 @@ func (a *App) filesUploadPost(w http.ResponseWriter, r *http.Request) {
 				_ = part.Close()
 				return
 			}
-			fileName := safeUploadName(part.FileName())
-			if fileName == "" {
-				err = errors.New("nombre de archivo inválido")
+			attempted++
+			if attempted > maxUploadBatchFiles {
+				partErr = fmt.Errorf("solo se permiten hasta %d archivos por subida", maxUploadBatchFiles)
 				break
 			}
-			var virtualTarget string
-			virtualTarget, destinationStorageID, err = a.resolveExplorerUploadTarget(r, current, destinationRoot, targetDir, fileName)
-			if err == nil {
+			fileName := safeUploadName(part.FileName())
+			if fileName == "" {
+				partErr = errors.New("nombre de archivo inválido")
+				break
+			}
+			virtualTarget, destinationStorageID, resolveErr := a.resolveExplorerUploadTarget(r, current, destinationRoot, targetDir, fileName)
+			partErr = resolveErr
+			if partErr == nil {
 				parent := path.Dir(virtualTarget)
 				if parent != "/" {
-					err = a.vfs.MkdirAll(r.Context(), parent)
+					partErr = a.vfs.MkdirAll(r.Context(), parent)
 				}
 			}
-			if err == nil {
-				_, err = a.vfs.WriteAtomic(r.Context(), virtualTarget, part, a.cfg.MaxUploadBytes, false)
+			if partErr == nil {
+				_, partErr = a.vfs.WriteAtomic(r.Context(), virtualTarget, part, a.cfg.MaxUploadBytes, false)
 			}
-			if err == nil {
-				uploaded = true
+			if partErr == nil {
+				// La entrada mínima se incorpora al catálogo de inmediato. Así Mi unidad
+				// refleja el archivo recién escrito sin esperar a que una indexación completa
+				// recorra una unidad grande. El indexador en segundo plano enriquecerá luego
+				// miniaturas, dimensiones e integridad.
+				if syncErr := a.catalogUploadedFile(r.Context(), virtualTarget); syncErr != nil {
+					a.logger.Warn("archivo subido pero no se pudo incorporar inmediatamente al catálogo", "path", virtualTarget, "error", syncErr)
+				}
+				uploaded++
+				storageIDs[destinationStorageID] = struct{}{}
 			}
 		default:
 			_, _ = io.Copy(io.Discard, io.LimitReader(part, 4096))
 		}
 		_ = part.Close()
-		if err != nil || uploaded {
-			break
+		if partErr != nil {
+			if part.FormName() != "file" {
+				redirectFilesError(w, r, current, partErr)
+				return
+			}
+			name := safeUploadName(part.FileName())
+			if name == "" {
+				name = "archivo"
+			}
+			failed = append(failed, fmt.Sprintf("%s: %v", name, partErr))
+			if attempted > maxUploadBatchFiles {
+				break
+			}
 		}
 	}
-	if err != nil {
-		redirectFilesError(w, r, current, err)
+	if uploaded == 0 {
+		if len(failed) > 0 {
+			redirectFilesError(w, r, current, errors.New(strings.Join(failed, "; ")))
+		} else {
+			redirectFilesError(w, r, current, errors.New("no se recibió ningún archivo"))
+		}
 		return
 	}
-	if !uploaded {
-		redirectFilesError(w, r, current, errors.New("no se recibió ningún archivo"))
-		return
-	}
-	if destinationStorageID != "" {
-		a.indexer.Enqueue(destinationStorageID)
+	for storageID := range storageIDs {
+		if storageID != "" {
+			a.indexer.Enqueue(storageID)
+		}
 	}
 	user := userFromContext(r.Context())
 	action := "file_upload_auto"
 	if destinationRoot != "" {
 		action = "file_upload_manual"
 	}
+	if attempted > 1 {
+		action += "_batch"
+	}
 	_ = a.store.Audit(r.Context(), user.ID, action, "correcto", a.clientIP(r))
-	redirectFilesOK(w, r, current, "Archivo subido; el catálogo se actualizará automáticamente")
+	message := fmt.Sprintf("%d archivo%s subido%s", uploaded, pluralSuffix(uploaded), pluralSuffix(uploaded))
+	if len(failed) == 0 {
+		redirectFilesOK(w, r, current, message)
+		return
+	}
+	problem := fmt.Sprintf("No se pudieron subir %d archivos: %s", len(failed), strings.Join(failed, "; "))
+	if len(failed) == 1 {
+		problem = "No se pudo subir 1 archivo: " + failed[0]
+	}
+	redirectFilesResult(w, r, current, message, problem)
+}
+
+func uploadBatchRequestLimit(perFile int64) int64 {
+	if perFile <= 0 {
+		return 1 << 30
+	}
+	const extra = int64(maxUploadBatchFiles+1) * multipartOverhead
+	max := int64(^uint64(0) >> 1)
+	if perFile > (max-extra)/maxUploadBatchFiles {
+		return max
+	}
+	return perFile*maxUploadBatchFiles + extra
+}
+
+func pluralSuffix(count int) string {
+	if count == 1 {
+		return ""
+	}
+	return "s"
+}
+
+func (a *App) catalogUploadedFile(ctx context.Context, virtualTarget string) error {
+	entry, err := a.vfs.Stat(ctx, virtualTarget)
+	if err != nil {
+		return err
+	}
+	if entry.IsDir || entry.VolumeID == "" {
+		return errors.New("la subida no corresponde a un archivo regular")
+	}
+	_, relative := splitExplorerPath(entry.VirtualPath)
+	if relative == "" {
+		return errors.New("ruta relativa de catálogo inválida")
+	}
+	mimeType := mime.TypeByExtension(strings.ToLower(filepath.Ext(entry.Name)))
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
+	file := catalog.File{
+		ID:           catalog.StableID(entry.VolumeID, relative),
+		StorageID:    entry.VolumeID,
+		VirtualRoot:  entry.VirtualRoot,
+		RelativePath: filepath.ToSlash(relative),
+		Name:         entry.Name,
+		Kind:         storagepkg.FileKind(entry.Name),
+		MIME:         mimeType,
+		Size:         entry.Size,
+		ModTime:      entry.ModTime.UTC(),
+	}
+	return a.catalog.UpsertBatch(ctx, []catalog.File{file})
 }
 
 func (a *App) resolveExplorerUploadTarget(r *http.Request, current, destinationRoot, targetDir, fileName string) (string, string, error) {
@@ -794,4 +892,16 @@ func redirectFilesError(w http.ResponseWriter, r *http.Request, current string, 
 func redirectFilesOK(w http.ResponseWriter, r *http.Request, current, message string) {
 	target := explorerURL(current)
 	http.Redirect(w, r, target+"?ok="+url.QueryEscape(message), http.StatusSeeOther)
+}
+
+func redirectFilesResult(w http.ResponseWriter, r *http.Request, current, message, problem string) {
+	target := explorerURL(current)
+	query := url.Values{}
+	if message != "" {
+		query.Set("ok", message)
+	}
+	if problem != "" {
+		query.Set("error", problem)
+	}
+	http.Redirect(w, r, target+"?"+query.Encode(), http.StatusSeeOther)
 }

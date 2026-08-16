@@ -253,11 +253,11 @@ Abre:
 /archivos
 ```
 
-La raíz muestra las unidades como carpetas virtuales. Dentro de cada una, la jerarquía se reconstruye desde el catálogo, por lo que navegar no requiere montar el HDD. Los directorios vacíos todavía no se persisten en el catálogo: aparecen cuando contienen al menos un archivo indexado.
+La raíz de **Mi unidad** combina el primer nivel de todas las unidades conectadas y presenta primero las carpetas y después los archivos, sin exponer cada disco físico como una carpeta artificial. Al entrar en una carpeta, la jerarquía se reconstruye desde el catálogo, por lo que navegar no requiere mantener el HDD montado. Los directorios vacíos todavía no se persisten en el catálogo: aparecen cuando contienen al menos un archivo indexado.
 
 Al abrir un archivo se solicita el original al VFS, que monta solamente su unidad durante la lectura.
 
-La subida ya no ocupa una tarjeta grande en `/almacenamiento`. Desde **Nuevo → Subir archivo** el diálogo muestra la ubicación actual y un botón **Elegir ubicación**. Se puede dejar en **Automático** o seleccionar una unidad conectada, navegar sus carpetas y fijar una ruta relativa concreta. Al entrar en una carpeta (`/archivos/ver/<raíz>/...`) esa ubicación sigue siendo el destino predeterminado mientras no se fuerce otra unidad.
+La subida ya no ocupa una tarjeta grande en `/almacenamiento`. Desde **Nuevo → Subir archivo** el diálogo abre directamente un área de **arrastrar y soltar** y un selector que admite múltiples archivos. Las opciones de destino quedan ocultas bajo **Avanzados**: se puede dejar en **Automático** o seleccionar una unidad conectada, navegar sus carpetas y fijar una ruta relativa concreta. Al entrar en una carpeta (`/archivos/ver/<raíz>/...`) esa ubicación sigue siendo el destino predeterminado mientras no se fuerce otra unidad.
 
 Cuando no se fuerza un destino, el routing usa:
 
@@ -266,7 +266,7 @@ Cuando no se fuerza un destino, el routing usa:
 - documentos/archivos/otros: `Documentos` → `Mixto`;
 - entre unidades con la misma prioridad se prefiere la que reporta más espacio libre.
 
-Si navegas dentro de una raíz virtual, la subida se dirige explícitamente a esa unidad y sigue aplicando su política de tipos. Después de cada subida se encola la reindexación correspondiente.
+Si navegas dentro de una raíz virtual, la subida se dirige explícitamente a esa unidad y sigue aplicando su política de tipos. Cada archivo escrito se incorpora **inmediatamente** al catálogo para que aparezca en Mi unidad sin esperar a un escaneo completo; después se encola la reindexación correspondiente para enriquecer miniaturas, dimensiones e integridad. Una tanda admite hasta 100 archivos y mantiene el límite configurado de tamaño **por archivo**.
 
 ### Operaciones de archivos y selección múltiple
 
@@ -579,9 +579,11 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o b
 
 1. Entra a `/archivos/ver/<raíz>` o una subcarpeta.
 2. Pulsa **Subir aquí** y verifica que aparezca el diálogo compacto.
-3. Sube un archivo compatible con la política de la unidad.
-4. Verifica que un tipo incompatible sea rechazado.
-5. Comprueba que la reindexación se encola automáticamente.
+3. Selecciona varios archivos o arrástralos al área de subida y comprueba que todos sean aceptados en una sola tanda.
+4. Abre **Avanzados** y verifica que puedas forzar unidad y carpeta; con Avanzados cerrado debe usarse la ubicación actual/automática.
+5. Verifica que un tipo incompatible sea rechazado sin impedir que los demás archivos compatibles del lote terminen.
+6. Vuelve inmediatamente a **Mi unidad**: los archivos recién subidos deben aparecer antes de que termine la reindexación completa.
+7. Comprueba que la reindexación se encola automáticamente para generar miniaturas y metadatos enriquecidos.
 
 ### WebDAV
 
