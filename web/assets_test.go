@@ -448,9 +448,13 @@ func TestUnifiedStorageUIIsEmbedded(t *testing.T) {
 			t.Fatalf("resumen global de almacenamiento incompleto; falta %q", expected)
 		}
 	}
-	for _, expected := range []string{"Unidades conectadas", "StorageUsageItems", "Archivos que más espacio ocupan", "StorageLargestFiles", "data-file-filter-form", `name="tipo"`, `name="modificado"`, `name="fuente"`, "usados", "libres"} {
+	for _, expected := range []string{"Unidades conectadas", "StorageUsageItems", "Archivos que más espacio ocupan", "StorageLargestFiles", "data-file-filter-form", `name="tipo"`, `name="modificado"`, `name="fuente"`, "usados", "libres", `<progress class="drive-storage-track"`, `<progress class="drive-storage-unit-track"`} {
 		if !strings.Contains(storage, expected) {
 			t.Fatalf("página de almacenamiento incompleta; falta %q", expected)
 		}
+	}
+
+	if strings.Contains(storage, `style="width:{{.StorageSummary.PercentUsed}}%"`) || strings.Contains(storage, `style="width:{{.PercentUsed}}%"`) {
+		t.Fatal("las barras de almacenamiento no deben depender de estilos inline bloqueados por la CSP")
 	}
 }

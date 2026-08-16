@@ -123,12 +123,12 @@ func statusClass(value string) string {
 	}
 }
 
-func percent(free, capacity uint64) int {
-	if capacity == 0 {
+func percent(value, total uint64) int {
+	if total == 0 {
 		return 0
 	}
-	used := capacity - minUint64(free, capacity)
-	return int(math.Round(float64(used) * 100 / float64(capacity)))
+	value = minUint64(value, total)
+	return int(math.Round(float64(value) * 100 / float64(total)))
 }
 
 func minUint64(a, b uint64) uint64 {

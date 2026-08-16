@@ -48,7 +48,7 @@
         <h2 id="storage-summary-title"><strong>{{formatBytesU .StorageSummary.Used}}</strong> <span>de {{formatBytesU .StorageSummary.Total}} usados</span></h2>
         <p>{{formatBytesU .StorageSummary.Free}} libres entre {{.StorageSummary.OnlineUnits}} unidad(es) conectada(s).</p>
       </div>
-      <div class="drive-storage-track" role="progressbar" aria-label="Almacenamiento usado" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{.StorageSummary.PercentUsed}}"><span style="width:{{.StorageSummary.PercentUsed}}%"></span></div>
+      <progress class="drive-storage-track" max="100" value="{{.StorageSummary.PercentUsed}}" aria-label="Almacenamiento global: {{.StorageSummary.PercentUsed}}% usado y {{percent .StorageSummary.Free .StorageSummary.Total}}% libre">{{.StorageSummary.PercentUsed}}%</progress>
       <div class="drive-storage-legend"><span><i class="storage-dot storage-dot-used"></i>Usado · {{formatBytesU .StorageSummary.Used}}</span><span><i class="storage-dot storage-dot-free"></i>Libre · {{formatBytesU .StorageSummary.Free}}</span></div>
     {{else}}
       <div class="drive-storage-empty-summary">
@@ -67,7 +67,7 @@
         <div class="drive-storage-unit-icon">{{template "icon-storage" $}}</div>
         <div class="drive-storage-unit-main">
           <div class="drive-storage-unit-title"><strong>{{.Name}}</strong><small>/{{.VirtualRoot}}{{if .FSType}} · {{.FSType}}{{end}}{{if .ReadOnly}} · solo lectura{{end}}</small></div>
-          <div class="drive-storage-unit-track" role="progressbar" aria-label="Uso de {{.Name}}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{.PercentUsed}}"><span style="width:{{.PercentUsed}}%"></span></div>
+          <progress class="drive-storage-unit-track" max="100" value="{{.PercentUsed}}" aria-label="{{.Name}}: {{.PercentUsed}}% usado y {{percent .Free .Capacity}}% libre">{{.PercentUsed}}%</progress>
         </div>
         <div class="drive-storage-unit-metrics">
           <span><strong>{{formatBytesU .Used}}</strong><small>usados</small></span>

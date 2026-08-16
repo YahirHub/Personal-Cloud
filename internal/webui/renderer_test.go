@@ -118,3 +118,51 @@ func TestRenderPages(t *testing.T) {
 		})
 	}
 }
+
+func TestPercentUsesProvidedPortion(t *testing.T) {
+	if got := percent(65, 100); got != 65 {
+		t.Fatalf("percent debe representar la porción recibida; got=%d", got)
+	}
+	if got := percent(150, 100); got != 100 {
+		t.Fatalf("percent debe limitar valores mayores al total; got=%d", got)
+	}
+	if got := percent(1, 0); got != 0 {
+		t.Fatalf("percent con total cero debe ser 0; got=%d", got)
+	}
+}
+
+func TestRenderStorageProgressRepresentsUsedAndFree(t *testing.T) {
+	renderer, err := NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := renderData{Title: "Almacenamiento", Description: "Prueba", CSRFToken: "token", FileFilterAction: "/almacenamiento"}
+	data.User = &renderUser{Username: "admin", Role: "admin"}
+	data.StorageSummary.Total = 100
+	data.StorageSummary.Used = 44
+	data.StorageSummary.Free = 56
+	data.StorageSummary.PercentUsed = 44
+	data.StorageSummary.OnlineUnits = 1
+	data.StorageUsageItems = []any{map[string]any{
+		"ID": "unit-1", "Name": "Unidad", "VirtualRoot": "unidad", "FSType": "ext4",
+		"ReadOnly": false, "PercentUsed": 44, "Used": uint64(44), "Free": uint64(56), "Capacity": uint64(100),
+	}}
+
+	var out bytes.Buffer
+	if err := renderer.Render(&out, "storage", data); err != nil {
+		t.Fatal(err)
+	}
+	html := out.String()
+	for _, expected := range []string{
+		`<progress class="drive-storage-track" max="100" value="44"`,
+		`<progress class="drive-storage-unit-track" max="100" value="44"`,
+		`44% usado y 56% libre`,
+	} {
+		if !strings.Contains(html, expected) {
+			t.Fatalf("barra de almacenamiento renderizada incorrectamente; falta %q", expected)
+		}
+	}
+	if strings.Contains(html, "ZgotmplZ") {
+		t.Fatal("la barra de almacenamiento no debe depender de estilos inline rechazados por html/template/CSP")
+	}
+}
