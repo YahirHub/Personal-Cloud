@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"sort"
@@ -23,7 +24,10 @@ import (
 	"personalcloud/internal/streaming"
 )
 
-const shareAuthCookiePrefix = "pc_share_auth_"
+const (
+	shareAuthCookiePrefix = "pc_share_auth_"
+	shareEmbedAccessTTL   = 2 * time.Hour
+)
 
 type sharePageItem struct {
 	ID                string
@@ -62,7 +66,6 @@ type publicShareView struct {
 	VideoStatusURL    string
 	PasswordProtected bool
 	Available         bool
-	AccessToken       string
 }
 
 func (a *App) absoluteURL(r *http.Request, value string) string {
@@ -347,6 +350,14 @@ func (a *App) publicShareEmbedGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) publicShareRender(w http.ResponseWriter, r *http.Request, embed bool) {
+	// Los grants de recursos nunca deben convertir la URL pública en una
+	// credencial portadora. Versiones anteriores dejaban ?access= en la barra
+	// de direcciones después del desbloqueo; cualquier navegación GET que aún
+	// lo traiga se canonicaliza inmediatamente a la URL limpia.
+	if strings.TrimSpace(r.URL.Query().Get("access")) != "" {
+		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+		return
+	}
 	share, err := a.store.PublicShareByToken(r.Context(), r.PathValue("token"))
 	if err != nil {
 		http.NotFound(w, r)
@@ -357,9 +368,8 @@ func (a *App) publicShareRender(w http.ResponseWriter, r *http.Request, embed bo
 		http.NotFound(w, r)
 		return
 	}
-	access := strings.TrimSpace(r.URL.Query().Get("access"))
-	authorized := share.PasswordHash == "" || a.validShareCookie(r, share) || a.validShareAccessTicket(share, access)
-	view := a.publicShareViewFor(r, share, file, access)
+	authorized := a.publicSharePageAuthorized(r, share)
+	view := a.publicShareViewFor(r, share, file, "")
 	data := pageData{
 		Title: file.Name, Description: "Archivo compartido públicamente desde Nube.", PublicSharePage: true,
 		PublicShare: &view, SharePasswordRequired: !authorized, ShareEmbed: embed,
@@ -367,9 +377,9 @@ func (a *App) publicShareRender(w http.ResponseWriter, r *http.Request, embed bo
 	if authorized {
 		_ = a.store.TouchPublicShare(r.Context(), share.ID, time.Now().UTC())
 	}
+	w.Header().Set("Cache-Control", "private, no-store")
 	if embed {
-		w.Header().Del("X-Frame-Options")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors *; base-uri 'self'; form-action 'self'")
+		setPublicEmbedHeaders(w)
 	}
 	a.render(w, http.StatusOK, "public_share", data)
 }
@@ -404,17 +414,41 @@ func (a *App) publicSharePasswordPost(w http.ResponseWriter, r *http.Request) {
 		view := a.publicShareViewFor(r, share, file, "")
 		isEmbed := strings.HasSuffix(r.URL.Path, "/embed")
 		data := pageData{Title: file.Name, Description: "Archivo compartido protegido.", PublicSharePage: true, PublicShare: &view, SharePasswordRequired: true, SharePasswordError: "La contraseña no es correcta.", ShareEmbed: isEmbed}
+		w.Header().Set("Cache-Control", "private, no-store")
 		if isEmbed {
-			w.Header().Del("X-Frame-Options")
-			w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors *; base-uri 'self'; form-action 'self'")
+			setPublicEmbedHeaders(w)
 		}
 		a.render(w, http.StatusUnauthorized, "public_share", data)
 		return
 	}
 	a.setShareCookie(w, share)
-	access := a.newShareAccessTicket(share, 12*time.Hour)
-	target := r.URL.Path + "?access=" + access
-	http.Redirect(w, r, target, http.StatusSeeOther)
+	isEmbed := strings.HasSuffix(r.URL.Path, "/embed")
+	if !isEmbed {
+		// La navegación normal queda autorizada exclusivamente por una cookie
+		// HttpOnly de sesión. La barra de direcciones nunca contiene un grant.
+		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+		return
+	}
+
+	// En iframes de terceros algunos navegadores bloquean cookies. Para no
+	// romper el embed protegido, la respuesta POST se renderiza directamente
+	// y sólo sus subrecursos reciben un grant temporal. Ese grant no aparece
+	// en la URL del iframe y además sólo es válido con Referer del share exacto.
+	file, exists := a.catalog.ByID(share.FileID)
+	if !exists {
+		http.NotFound(w, r)
+		return
+	}
+	access := a.newShareAccessTicket(share, shareEmbedAccessTTL)
+	view := a.publicShareViewFor(r, share, file, access)
+	data := pageData{
+		Title: file.Name, Description: "Archivo compartido protegido.", PublicSharePage: true,
+		PublicShare: &view, SharePasswordRequired: false, ShareEmbed: true,
+	}
+	_ = a.store.TouchPublicShare(r.Context(), share.ID, time.Now().UTC())
+	w.Header().Set("Cache-Control", "private, no-store")
+	setPublicEmbedHeaders(w)
+	a.render(w, http.StatusOK, "public_share", data)
 }
 
 func (a *App) publicShareVideoAccess(w http.ResponseWriter, r *http.Request) (store.PublicShare, catalog.File, bool) {
@@ -423,7 +457,7 @@ func (a *App) publicShareVideoAccess(w http.ResponseWriter, r *http.Request) (st
 		http.NotFound(w, r)
 		return store.PublicShare{}, catalog.File{}, false
 	}
-	if share.PasswordHash != "" && !a.validShareCookie(r, share) && !a.validShareAccessTicket(share, r.URL.Query().Get("access")) {
+	if !a.publicShareResourceAuthorized(r, share) {
 		http.Error(w, "Se requiere contraseña.", http.StatusUnauthorized)
 		return store.PublicShare{}, catalog.File{}, false
 	}
@@ -553,7 +587,7 @@ func (a *App) publicShareVideoStatusGet(w http.ResponseWriter, r *http.Request) 
 }
 
 func (a *App) publicShareVideoVariantGet(w http.ResponseWriter, r *http.Request) {
-	_, file, ok := a.publicShareVideoAccess(w, r)
+	share, file, ok := a.publicShareVideoAccess(w, r)
 	if !ok {
 		return
 	}
@@ -576,7 +610,11 @@ func (a *App) publicShareVideoVariantGet(w http.ResponseWriter, r *http.Request)
 	}
 	w.Header().Set("Content-Type", "video/mp4")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": file.Name}))
-	w.Header().Set("Cache-Control", "private, max-age=21600")
+	if share.PasswordHash != "" {
+		w.Header().Set("Cache-Control", "private, no-store")
+	} else {
+		w.Header().Set("Cache-Control", "private, max-age=21600")
+	}
 	w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'self'")
 	http.ServeContent(w, r, file.Name, info.ModTime(), handle)
@@ -588,7 +626,7 @@ func (a *App) publicShareContentGet(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if share.PasswordHash != "" && !a.validShareCookie(r, share) && !a.validShareAccessTicket(share, r.URL.Query().Get("access")) {
+	if !a.publicShareResourceAuthorized(r, share) {
 		http.Error(w, "Se requiere contraseña.", http.StatusUnauthorized)
 		return
 	}
@@ -654,6 +692,48 @@ func publicInlineAllowed(file catalog.File) bool {
 	}
 }
 
+func setPublicEmbedHeaders(w http.ResponseWriter) {
+	w.Header().Del("X-Frame-Options")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors *; base-uri 'self'; form-action 'self'")
+}
+
+func (a *App) publicSharePageAuthorized(r *http.Request, share store.PublicShare) bool {
+	return share.PasswordHash == "" || a.validShareCookie(r, share)
+}
+
+func (a *App) publicShareResourceAuthorized(r *http.Request, share store.PublicShare) bool {
+	if share.PasswordHash == "" || a.validShareCookie(r, share) {
+		return true
+	}
+	return a.validShareSubresourceAccess(r, share)
+}
+
+func (a *App) validShareSubresourceAccess(r *http.Request, share store.PublicShare) bool {
+	access := strings.TrimSpace(r.URL.Query().Get("access"))
+	if !a.validShareAccessTicket(share, access) {
+		return false
+	}
+	// Un grant de embed no es una segunda contraseña ni un enlace público.
+	// Sólo autoriza solicitudes iniciadas por la página pública exacta. Pegar
+	// /contenido?access=... en otra ventana/incógnito carece de este Referer.
+	referer := strings.TrimSpace(r.Referer())
+	if referer == "" {
+		return false
+	}
+	parsed, err := url.Parse(referer)
+	if err != nil || parsed.Host == "" || !strings.EqualFold(parsed.Host, r.Host) {
+		return false
+	}
+	base := "/s/" + share.Token
+	if parsed.Path != base && parsed.Path != base+"/embed" {
+		return false
+	}
+	if site := strings.TrimSpace(r.Header.Get("Sec-Fetch-Site")); site != "" && site != "same-origin" {
+		return false
+	}
+	return true
+}
+
 func (a *App) publicShareViewFor(r *http.Request, share store.PublicShare, file catalog.File, access string) publicShareView {
 	query := ""
 	if access != "" {
@@ -674,7 +754,7 @@ func (a *App) publicShareViewFor(r *http.Request, share store.PublicShare, file 
 		VideoQualitiesURL: "/s/" + share.Token + "/video/calidades" + qualityQuery,
 		VideoPrepareURL:   "/s/" + share.Token + "/video/preparar" + qualityQuery,
 		VideoStatusURL:    "/s/" + share.Token + "/video/estado" + qualityQuery,
-		PasswordProtected: share.PasswordHash != "", Available: a.storageOnline(r, file.StorageID), AccessToken: access,
+		PasswordProtected: share.PasswordHash != "", Available: a.storageOnline(r, file.StorageID),
 	}
 }
 
@@ -689,7 +769,9 @@ func (a *App) shareCookieSignature(share store.PublicShare) string {
 }
 
 func (a *App) setShareCookie(w http.ResponseWriter, share store.PublicShare) {
-	http.SetCookie(w, &http.Cookie{Name: shareCookieName(share), Value: a.shareCookieSignature(share), Path: "/s/", MaxAge: 12 * 60 * 60, HttpOnly: true, Secure: a.cfg.CookieSecure, SameSite: http.SameSiteLaxMode})
+	// Cookie de sesión: cerrar la sesión del navegador elimina el desbloqueo.
+	// No se persiste una autorización de 12 horas en disco.
+	http.SetCookie(w, &http.Cookie{Name: shareCookieName(share), Value: a.shareCookieSignature(share), Path: "/s/", HttpOnly: true, Secure: a.cfg.CookieSecure, SameSite: http.SameSiteLaxMode})
 }
 
 func (a *App) validShareCookie(r *http.Request, share store.PublicShare) bool {
@@ -702,25 +784,30 @@ func (a *App) validShareCookie(r *http.Request, share store.PublicShare) bool {
 }
 
 func (a *App) newShareAccessTicket(share store.PublicShare, ttl time.Duration) string {
+	if ttl <= 0 || ttl > shareEmbedAccessTTL {
+		ttl = shareEmbedAccessTTL
+	}
 	exp := time.Now().UTC().Add(ttl).Unix()
-	payload := share.ID + "|" + share.Token + "|" + strconv.FormatInt(exp, 10) + "|" + share.PasswordHash
+	expText := strconv.FormatInt(exp, 10)
+	payload := "v2|subresource|" + share.ID + "|" + share.Token + "|" + expText + "|" + share.PasswordHash
 	mac := hmac.New(sha256.New, a.shareSecret[:])
 	_, _ = mac.Write([]byte(payload))
-	return strconv.FormatInt(exp, 10) + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	return "v2." + expText + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
 func (a *App) validShareAccessTicket(share store.PublicShare, ticket string) bool {
 	parts := strings.Split(ticket, ".")
-	if len(parts) != 2 {
+	if len(parts) != 3 || parts[0] != "v2" {
 		return false
 	}
-	exp, err := strconv.ParseInt(parts[0], 10, 64)
-	if err != nil || exp < time.Now().UTC().Unix() || exp > time.Now().UTC().Add(24*time.Hour).Unix() {
+	now := time.Now().UTC()
+	exp, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil || exp < now.Unix() || exp > now.Add(shareEmbedAccessTTL+time.Minute).Unix() {
 		return false
 	}
-	payload := share.ID + "|" + share.Token + "|" + parts[0] + "|" + share.PasswordHash
+	payload := "v2|subresource|" + share.ID + "|" + share.Token + "|" + parts[1] + "|" + share.PasswordHash
 	mac := hmac.New(sha256.New, a.shareSecret[:])
 	_, _ = mac.Write([]byte(payload))
 	expected := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	return hmac.Equal([]byte(parts[1]), []byte(expected))
+	return hmac.Equal([]byte(parts[2]), []byte(expected))
 }

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"personalcloud/internal/auth"
 	"personalcloud/internal/catalog"
 	"personalcloud/internal/config"
 	"personalcloud/internal/storage"
@@ -786,5 +787,132 @@ func TestShareAccessTicketIsSignedAndInvalidatedByPasswordChange(t *testing.T) {
 	share.Token = "token-b"
 	if a.validShareAccessTicket(share, ticket) {
 		t.Fatal("renovar el enlace debe invalidar tickets anteriores")
+	}
+}
+func TestProtectedShareGrantCannotBeReusedAsStandaloneURL(t *testing.T) {
+	a := &App{}
+	copy(a.shareSecret[:], []byte("0123456789abcdef0123456789abcdef"))
+	share := store.PublicShare{ID: "share-1", Token: "token-a", PasswordHash: "hash-a"}
+	ticket := a.newShareAccessTicket(share, time.Hour)
+
+	direct := httptest.NewRequest(http.MethodGet, "http://nube.local/s/token-a/contenido?access="+url.QueryEscape(ticket), nil)
+	if a.publicShareResourceAuthorized(direct, share) {
+		t.Fatal("un grant copiado no debe autorizar una URL abierta directamente sin la página pública de origen")
+	}
+	if a.publicSharePageAuthorized(direct, share) {
+		t.Fatal("un ticket de subrecurso nunca debe desbloquear la página pública")
+	}
+
+	subresource := httptest.NewRequest(http.MethodGet, "http://nube.local/s/token-a/contenido?access="+url.QueryEscape(ticket), nil)
+	subresource.Header.Set("Referer", "http://nube.local/s/token-a/embed")
+	subresource.Header.Set("Sec-Fetch-Site", "same-origin")
+	if !a.publicShareResourceAuthorized(subresource, share) {
+		t.Fatal("el grant debe funcionar para un subrecurso iniciado por el embed exacto")
+	}
+
+	foreign := httptest.NewRequest(http.MethodGet, "http://nube.local/s/token-a/contenido?access="+url.QueryEscape(ticket), nil)
+	foreign.Header.Set("Referer", "http://otro.local/s/token-a/embed")
+	foreign.Header.Set("Sec-Fetch-Site", "cross-site")
+	if a.publicShareResourceAuthorized(foreign, share) {
+		t.Fatal("un sitio ajeno no debe poder reutilizar el grant")
+	}
+
+	wrongShare := httptest.NewRequest(http.MethodGet, "http://nube.local/s/token-a/contenido?access="+url.QueryEscape(ticket), nil)
+	wrongShare.Header.Set("Referer", "http://nube.local/s/otro-token/embed")
+	if a.publicShareResourceAuthorized(wrongShare, share) {
+		t.Fatal("el Referer debe pertenecer al mismo enlace público")
+	}
+}
+
+func TestProtectedShareCookieIsSessionOnly(t *testing.T) {
+	a := &App{}
+	copy(a.shareSecret[:], []byte("0123456789abcdef0123456789abcdef"))
+	share := store.PublicShare{ID: "share-1", Token: "token-a", PasswordHash: "hash-a"}
+	rr := httptest.NewRecorder()
+	a.setShareCookie(rr, share)
+	cookie := findCookie(rr.Result().Cookies(), shareCookieName(share))
+	if cookie == nil {
+		t.Fatal("debía emitirse cookie de desbloqueo")
+	}
+	if cookie.MaxAge != 0 || !cookie.Expires.IsZero() {
+		t.Fatalf("la autorización protegida debe ser cookie de sesión, got MaxAge=%d Expires=%v", cookie.MaxAge, cookie.Expires)
+	}
+	if !cookie.HttpOnly {
+		t.Fatal("la cookie de desbloqueo debe ser HttpOnly")
+	}
+}
+
+func TestProtectedSharePasswordFlowKeepsNavigationURLClean(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(t.TempDir() + "/state.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	admin, err := db.CreateFirstAdmin(ctx, "admin", "unused-test-hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	application, err := New(config.Config{Addr: ":0", DataDir: t.TempDir(), SessionTTL: time.Hour}, db, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer application.Close()
+
+	file := catalog.File{ID: "file-protected", StorageID: "offline-storage", VirtualRoot: "Privado", RelativePath: "foto.jpg", Name: "foto.jpg", Kind: "image", MIME: "image/jpeg", Size: 123}
+	if err := application.catalog.UpsertBatch(ctx, []catalog.File{file}); err != nil {
+		t.Fatal(err)
+	}
+	password := "clave-segura-123"
+	passwordHash, err := auth.HashPassword(password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	share, err := db.UpsertPublicShare(ctx, admin.ID, file.ID, "token-protected", passwordHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := application.Handler()
+
+	legacy := httptest.NewRecorder()
+	handler.ServeHTTP(legacy, httptest.NewRequest(http.MethodGet, "/s/"+share.Token+"?access=legacy-ticket", nil))
+	if legacy.Code != http.StatusSeeOther || legacy.Header().Get("Location") != "/s/"+share.Token {
+		t.Fatalf("una URL pública con access antiguo debe limpiarse: status=%d location=%q", legacy.Code, legacy.Header().Get("Location"))
+	}
+
+	incognito := httptest.NewRecorder()
+	handler.ServeHTTP(incognito, httptest.NewRequest(http.MethodGet, "/s/"+share.Token, nil))
+	if incognito.Code != http.StatusOK || !strings.Contains(incognito.Body.String(), `name="password"`) {
+		t.Fatalf("un navegador sin cookie debe pedir contraseña: status=%d", incognito.Code)
+	}
+
+	form := url.Values{"password": {password}}
+	post := httptest.NewRequest(http.MethodPost, "/s/"+share.Token, strings.NewReader(form.Encode()))
+	post.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	unlocked := httptest.NewRecorder()
+	handler.ServeHTTP(unlocked, post)
+	if unlocked.Code != http.StatusSeeOther || unlocked.Header().Get("Location") != "/s/"+share.Token {
+		t.Fatalf("el desbloqueo normal debe volver a URL limpia: status=%d location=%q", unlocked.Code, unlocked.Header().Get("Location"))
+	}
+	if strings.Contains(unlocked.Header().Get("Location"), "access=") {
+		t.Fatal("el desbloqueo no debe poner un bearer access en Location")
+	}
+	cookie := findCookie(unlocked.Result().Cookies(), shareCookieName(share))
+	if cookie == nil {
+		t.Fatal("el desbloqueo debe emitir cookie de sesión")
+	}
+
+	authorizedReq := httptest.NewRequest(http.MethodGet, "/s/"+share.Token, nil)
+	authorizedReq.AddCookie(cookie)
+	authorized := httptest.NewRecorder()
+	handler.ServeHTTP(authorized, authorizedReq)
+	if authorized.Code != http.StatusOK || strings.Contains(authorized.Body.String(), `name="password"`) {
+		t.Fatalf("la cookie válida debe desbloquear la vista: status=%d", authorized.Code)
+	}
+
+	fresh := httptest.NewRecorder()
+	handler.ServeHTTP(fresh, httptest.NewRequest(http.MethodGet, "/s/"+share.Token, nil))
+	if fresh.Code != http.StatusOK || !strings.Contains(fresh.Body.String(), `name="password"`) {
+		t.Fatal("otro contexto sin cookie debe seguir exigiendo contraseña")
 	}
 }

@@ -57,10 +57,10 @@ Las contraseñas públicas se almacenan con el mismo PBKDF2-HMAC-SHA256 robusto 
 
 El desbloqueo de un enlace público no modifica estado autenticado del usuario, así que no depende de la cookie CSRF principal. Esto permite que un formulario de contraseña funcione dentro de un iframe aun cuando el navegador bloquee cookies de terceros. Tras validar la contraseña se emite:
 
-- una cookie HTTP-only por `share_id` para navegación normal;
-- un ticket HMAC temporal ligado a `share_id + token + password_hash`, usado por el embed.
+- una cookie HTTP-only **de sesión** por `share_id` para navegación normal, que vuelve siempre a la URL pública limpia;
+- sólo cuando se desbloquea `/embed`, un grant HMAC v2 temporal ligado a `share_id + token + password_hash`, incorporado exclusivamente a subrecursos de esa respuesta para cubrir navegadores que bloquean cookies de terceros.
 
-Cambiar la contraseña **o renovar el enlace** invalida automáticamente cookies/tickets anteriores. El rate limit protege intentos de contraseña.
+El grant de embed no autoriza la página pública ni funciona como URL independiente: exige `Referer` same-origin del `/s/<token>` o `/s/<token>/embed` exacto y tiene un TTL máximo de 2 horas. Cambiar la contraseña **o renovar el enlace** invalida automáticamente cookies/grants anteriores. El rate limit protege intentos de contraseña. Véase también `contexto/24-endurecimiento-enlaces-protegidos.md`.
 
 ### Visores públicos
 

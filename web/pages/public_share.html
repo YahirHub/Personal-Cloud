@@ -42,9 +42,9 @@
       {{else if eq .PublicShare.Viewer "audio"}}
         <div class="public-share-canvas public-share-audio"><audio controls preload="metadata" src="{{.PublicShare.ContentURL}}"></audio></div>
       {{else if eq .PublicShare.Viewer "html"}}
-        <iframe class="public-share-document" src="{{.PublicShare.ContentURL}}" sandbox="" referrerpolicy="no-referrer" title="{{.PublicShare.Name}}"></iframe>
+        <iframe class="public-share-document" src="{{.PublicShare.ContentURL}}" sandbox="" referrerpolicy="same-origin" title="{{.PublicShare.Name}}"></iframe>
       {{else if or (eq .PublicShare.Viewer "pdf") (eq .PublicShare.Viewer "text") (eq .PublicShare.Viewer "markdown")}}
-        <iframe class="public-share-document" src="{{.PublicShare.ContentURL}}" referrerpolicy="no-referrer" title="{{.PublicShare.Name}}"></iframe>
+        <iframe class="public-share-document" src="{{.PublicShare.ContentURL}}" referrerpolicy="same-origin" title="{{.PublicShare.Name}}"></iframe>
       {{else}}
         <div class="public-share-unavailable"><strong>No hay vista previa para este formato</strong><p>Puedes descargar el archivo original.</p><a class="button button-primary" href="{{.PublicShare.DownloadURL}}">{{template "icon-download" .}} Descargar</a></div>
       {{end}}
