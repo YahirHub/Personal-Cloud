@@ -205,6 +205,9 @@ func (a *App) elementsMovePost(w http.ResponseWriter, r *http.Request) {
 		if err := a.store.MoveStarredFileID(r.Context(), file.ID, movedFile.ID); err != nil {
 			a.logger.Warn("archivo movido pero no se pudo migrar Destacados", "old_id", file.ID, "new_id", movedFile.ID, "error", err)
 		}
+		if err := a.store.MovePublicShareFileID(r.Context(), file.ID, movedFile.ID); err != nil {
+			a.logger.Warn("archivo movido pero no se pudieron migrar enlaces compartidos", "old_id", file.ID, "new_id", movedFile.ID, "error", err)
+		}
 		moved++
 	}
 	user := userFromContext(r.Context())
@@ -264,6 +267,9 @@ func (a *App) elementsDeletePost(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := a.store.DeleteStarredFileIDs(r.Context(), catalogDeletes); err != nil {
 			a.logger.Warn("no se pudieron limpiar Destacados de archivos eliminados", "error", err)
+		}
+		if err := a.store.DeletePublicSharesByFileIDs(r.Context(), catalogDeletes); err != nil {
+			a.logger.Warn("no se pudieron revocar enlaces de archivos eliminados", "error", err)
 		}
 		return nil
 	}
@@ -447,6 +453,9 @@ func (a *App) fileRenamePost(w http.ResponseWriter, r *http.Request) {
 	if err := a.store.MoveStarredFileID(r.Context(), file.ID, moved.ID); err != nil {
 		a.logger.Warn("no se pudo conservar Destacados al renombrar", "old_id", file.ID, "new_id", moved.ID, "error", err)
 	}
+	if err := a.store.MovePublicShareFileID(r.Context(), file.ID, moved.ID); err != nil {
+		a.logger.Warn("no se pudieron conservar enlaces compartidos al renombrar", "old_id", file.ID, "new_id", moved.ID, "error", err)
+	}
 	user := userFromContext(r.Context())
 	if user != nil {
 		_ = a.store.Audit(r.Context(), user.ID, "file_rename", fmt.Sprintf("%s -> %s", file.Name, moved.Name), a.clientIP(r))
@@ -615,6 +624,9 @@ func (a *App) forgetMissingFile(ctx context.Context, file catalog.File) {
 	}
 	if err := a.store.DeleteStarredFileIDs(ctx, []string{file.ID}); err != nil {
 		a.logger.Warn("no se pudo limpiar Destacados del archivo faltante", "file_id", file.ID, "error", err)
+	}
+	if err := a.store.DeletePublicSharesByFileIDs(ctx, []string{file.ID}); err != nil {
+		a.logger.Warn("no se pudieron revocar enlaces del archivo faltante", "file_id", file.ID, "error", err)
 	}
 }
 

@@ -45,6 +45,7 @@ type App struct {
 	batchMu           sync.Mutex
 	davAuthSecret     [32]byte
 	downloadSecret    [32]byte
+	shareSecret       [32]byte
 	davAuthCache      map[string]davAuthCacheEntry
 	batchDownloads    map[string]batchDownload
 	batchZIP          chan struct{}
@@ -116,6 +117,12 @@ type pageData struct {
 	SettingsSyncText       string
 	MoveDestinations       []moveDestination
 	IntegrityUnits         []integrityUnitView
+	Shares                 []sharePageItem
+	PublicShare            *publicShareView
+	PublicSharePage        bool
+	SharePasswordRequired  bool
+	SharePasswordError     string
+	ShareEmbed             bool
 }
 
 type contextKey string
@@ -129,6 +136,9 @@ var (
 	downloadTicketPolicy = ratelimit.Policy{MaxAttempts: 120, Window: time.Minute}
 	bulkActionPolicy     = ratelimit.Policy{MaxAttempts: 30, Window: time.Minute}
 	videoTranscodePolicy = ratelimit.Policy{MaxAttempts: 20, Window: time.Hour}
+	sharePasswordPolicy  = ratelimit.Policy{MaxAttempts: 8, Window: 15 * time.Minute}
+	shareManagePolicy    = ratelimit.Policy{MaxAttempts: 30, Window: time.Minute}
+	shareVideoPolicy     = ratelimit.Policy{MaxAttempts: 12, Window: time.Hour}
 )
 
 const (
@@ -169,6 +179,10 @@ func New(cfg config.Config, storage *store.Store, logger *slog.Logger) (*App, er
 	if _, err := rand.Read(downloadSecret[:]); err != nil {
 		return nil, fmt.Errorf("preparar descargas seguras: %w", err)
 	}
+	var shareSecret [32]byte
+	if _, err := rand.Read(shareSecret[:]); err != nil {
+		return nil, fmt.Errorf("preparar enlaces públicos: %w", err)
+	}
 
 	a := &App{
 		cfg:               cfg,
@@ -186,6 +200,7 @@ func New(cfg config.Config, storage *store.Store, logger *slog.Logger) (*App, er
 		webdav:            dav,
 		davAuthSecret:     davAuthSecret,
 		downloadSecret:    downloadSecret,
+		shareSecret:       shareSecret,
 		davAuthCache:      make(map[string]davAuthCacheEntry),
 		batchDownloads:    make(map[string]batchDownload),
 		batchZIP:          make(chan struct{}, 1),
@@ -252,6 +267,7 @@ func (a *App) routes() {
 	a.mux.Handle("GET /archivos/ver/{path...}", a.requireAuth(http.HandlerFunc(a.filesGet)))
 	a.mux.Handle("GET /recientes", a.requireAuth(http.HandlerFunc(a.recentFilesGet)))
 	a.mux.Handle("GET /destacados", a.requireAuth(http.HandlerFunc(a.starredFilesGet)))
+	a.mux.Handle("GET /compartidos", a.requireAuth(http.HandlerFunc(a.sharedFilesGet)))
 	a.mux.Handle("GET /api/archivos/listado", a.requireAuth(http.HandlerFunc(a.filesListAPI)))
 	a.mux.Handle("POST /archivos/subir", a.requireAuth(http.HandlerFunc(a.filesUploadPost)))
 	a.mux.Handle("GET /galeria", a.requireAuth(http.HandlerFunc(a.galleryGet)))
@@ -270,6 +286,13 @@ func (a *App) routes() {
 	a.mux.Handle("POST /api/archivo/{id}/contenido", a.requireAuth(http.HandlerFunc(a.fileTextContentPost)))
 	a.mux.Handle("GET /api/archivo/{id}/info", a.requireAuth(http.HandlerFunc(a.fileInfoAPI)))
 	a.mux.Handle("POST /api/archivo/{id}/destacar", a.requireAuth(http.HandlerFunc(a.fileStarPost)))
+	a.mux.Handle("GET /api/archivo/{id}/compartir", a.requireAuth(http.HandlerFunc(a.fileShareInfoGet)))
+	a.mux.Handle("POST /api/archivo/{id}/compartir", a.requireAuth(http.HandlerFunc(a.fileSharePost)))
+	a.mux.Handle("GET /api/compartidos/{id}", a.requireAuth(http.HandlerFunc(a.shareInfoGet)))
+	a.mux.Handle("POST /api/compartidos/{id}/configurar", a.requireAuth(http.HandlerFunc(a.shareConfigurePost)))
+	a.mux.Handle("POST /api/compartidos/{id}/renovar", a.requireAuth(http.HandlerFunc(a.shareRenewPost)))
+	a.mux.Handle("POST /api/compartidos/{id}/eliminar", a.requireAuth(http.HandlerFunc(a.shareDeletePost)))
+	a.mux.Handle("POST /api/compartidos/eliminar-todos", a.requireAuth(http.HandlerFunc(a.sharesDeleteAllPost)))
 	a.mux.Handle("POST /api/archivo/{id}/renombrar", a.requireAuth(http.HandlerFunc(a.fileRenamePost)))
 	a.mux.Handle("GET /api/video/{id}/calidades", a.requireAuth(http.HandlerFunc(a.videoQualitiesGet)))
 	a.mux.Handle("POST /api/video/{id}/preparar", a.requireAuth(http.HandlerFunc(a.videoVariantPreparePost)))
@@ -298,6 +321,18 @@ func (a *App) routes() {
 	a.mux.Handle("POST /api/elementos/mover", a.requireAuth(http.HandlerFunc(a.elementsMovePost)))
 	a.mux.Handle("POST /api/elementos/destacar", a.requireAuth(http.HandlerFunc(a.elementsStarPost)))
 	a.mux.Handle("POST /api/elementos/eliminar", a.requireAuth(http.HandlerFunc(a.elementsDeletePost)))
+
+	// Enlaces públicos: el token aleatorio es la credencial; la contraseña opcional
+	// se valida antes de servir cualquier byte del archivo.
+	a.mux.HandleFunc("GET /s/{token}", a.publicShareGet)
+	a.mux.HandleFunc("POST /s/{token}", a.publicSharePasswordPost)
+	a.mux.HandleFunc("GET /s/{token}/embed", a.publicShareEmbedGet)
+	a.mux.HandleFunc("POST /s/{token}/embed", a.publicSharePasswordPost)
+	a.mux.HandleFunc("GET /s/{token}/contenido", a.publicShareContentGet)
+	a.mux.HandleFunc("GET /s/{token}/video/calidades", a.publicShareVideoQualitiesGet)
+	a.mux.HandleFunc("POST /s/{token}/video/preparar", a.publicShareVideoPreparePost)
+	a.mux.HandleFunc("GET /s/{token}/video/estado", a.publicShareVideoStatusGet)
+	a.mux.HandleFunc("GET /s/{token}/video/{quality}", a.publicShareVideoVariantGet)
 	a.mux.Handle("POST /api/elementos/descargar", a.requireAuth(http.HandlerFunc(a.batchDownloadTicketPost)))
 	a.mux.Handle("GET /descarga-lote/{token}", a.requireAuth(http.HandlerFunc(a.batchDownloadGet)))
 	a.mux.HandleFunc("GET /salud", a.healthGet)

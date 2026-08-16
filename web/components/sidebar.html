@@ -6,6 +6,7 @@
     <a class="nav-link {{if eq .CurrentPath "/archivos"}}active{{end}}" href="/archivos">{{template "icon-files" .}}<span>Mi unidad</span></a>
     <a class="nav-link {{if eq .CurrentPath "/recent"}}active{{end}}" href="/recientes">{{template "icon-recent" .}}<span>Recientes</span></a>
     <a class="nav-link {{if eq .CurrentPath "/starred"}}active{{end}}" href="/destacados">{{template "icon-star" .}}<span>Destacados</span></a>
+    <a class="nav-link {{if eq .CurrentPath "/compartidos"}}active{{end}}" href="/compartidos">{{template "icon-share" .}}<span>Compartidos</span></a>
     <a class="nav-link {{if eq .CurrentPath "/galeria"}}active{{end}}" href="/galeria">{{template "icon-gallery" .}}<span>Galería</span></a>
     <div class="nav-separator" aria-hidden="true"></div>
     <a class="nav-link {{if eq .CurrentPath "/almacenamiento"}}active{{end}}" href="/almacenamiento">{{template "icon-storage" .}}<span>Almacenamiento</span></a>

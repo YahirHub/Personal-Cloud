@@ -38,13 +38,15 @@ Implementado:
 - Preferencias locales persistentes del reproductor de video: mute, volumen y velocidad.
 - Calidad de video **Auto**/Original/360p/480p/720p/1080p cuando FFmpeg + libx264 están disponibles; Auto mide una muestra de la ruta real, considera el tamaño del visor y aplica margen de seguridad para elegir resolución. Las variantes se generan bajo demanda y se cachean localmente.
 - Descarga por clic derecho mediante ticket AES-GCM opaco, ligado al usuario y de vida corta; las URLs no revelan ruta, storage ID ni nombre del archivo.
+- **Compartición pública estilo Drive**: cada archivo puede tener un enlace revocable, opcionalmente protegido con contraseña PBKDF2. `/compartidos` permite copiar, reconfigurar, renovar el token, revocar enlaces individuales o eliminar todos los enlaces; el administrador puede gestionar los enlaces de todos los usuarios. Renombrar/mover conserva el enlace y eliminar el archivo lo revoca. Los enlaces públicos no exponen rutas físicas ni IDs de almacenamiento.
+- Los enlaces públicos reutilizan los visores disponibles. Video usa el reproductor propio con seek, volumen, velocidad, fullscreen y calidad Auto/Original/360p/480p/720p/1080p cuando FFmpeg está disponible. Cada enlace tiene además `/embed`; los embeds protegidos pueden desbloquearse dentro del iframe mediante un ticket HMAC temporal sin depender de cookies de terceros.
 - Scroll infinito por defecto o paginación persistente mediante un componente de listado reutilizable.
 - Menú `⋯` reutilizable en Galería/Archivos con **Seleccionar** y **Seleccionar todo**; la selección total carga elementos del modo continuo hasta el límite seguro de 500 por operación.
 - Apertura del original mediante montaje bajo demanda.
-- Upload contextual mediante botón/widget dentro de la carpeta actual de `/archivos/ver/...`.
+- Upload contextual mediante botón/widget dentro de la carpeta actual de `/archivos/ver/...`, con selector opcional de **unidad + carpeta**. Si no se fuerza una ubicación, se mantiene el routing automático por tipo de archivo y espacio libre.
 - Registro de unidad con primera indexación automática y reindexación manual visible.
 - Explorador `/archivos` basado en el catálogo, usable aunque una unidad esté desmontada o desconectada.
-- Upload con destino automático según tipo de archivo, categoría de unidad y espacio libre conocido.
+- Upload con destino automático según tipo de archivo, categoría de unidad y espacio libre conocido, o destino manual explícito desde el propio diálogo de subida.
 - Políticas por tipo de unidad: documentos, fotos, multimedia o mixto.
 - Servidor WebDAV en `/webdav/` con las mismas credenciales.
 - TLS directo opcional o despliegue detrás de proxy HTTPS.
@@ -255,7 +257,7 @@ La raíz muestra las unidades como carpetas virtuales. Dentro de cada una, la je
 
 Al abrir un archivo se solicita el original al VFS, que monta solamente su unidad durante la lectura.
 
-La subida ya no ocupa una tarjeta grande en `/almacenamiento`. Al entrar en una carpeta concreta (`/archivos/ver/<raíz>/...`) aparece un botón **Subir aquí** que abre un diálogo compacto y escribe en esa ubicación.
+La subida ya no ocupa una tarjeta grande en `/almacenamiento`. Desde **Nuevo → Subir archivo** el diálogo muestra la ubicación actual y un botón **Elegir ubicación**. Se puede dejar en **Automático** o seleccionar una unidad conectada, navegar sus carpetas y fijar una ruta relativa concreta. Al entrar en una carpeta (`/archivos/ver/<raíz>/...`) esa ubicación sigue siendo el destino predeterminado mientras no se fuerce otra unidad.
 
 Cuando no se fuerza un destino, el routing usa:
 

@@ -390,3 +390,91 @@ func TestMutationsPreserveAppSettings(t *testing.T) {
 		t.Fatalf("ajustes se perdieron durante mutación: got=%+v want=%+v", got, settings)
 	}
 }
+
+func TestPublicShareLifecyclePersistsAndFollowsFileID(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	storage, err := Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	user, err := storage.CreateFirstAdmin(ctx, "admin", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := storage.UpsertPublicShare(ctx, user.ID, "file-a", "token-a", "password-hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.ID == "" || created.Token != "token-a" || created.PasswordHash != "password-hash" {
+		t.Fatalf("enlace creado inesperado: %+v", created)
+	}
+	byToken, err := storage.PublicShareByToken(ctx, "token-a")
+	if err != nil || byToken.ID != created.ID {
+		t.Fatalf("lookup por token: %+v err=%v", byToken, err)
+	}
+	updated, err := storage.SetPublicSharePassword(ctx, created.ID, "nuevo-hash")
+	if err != nil || updated.PasswordHash != "nuevo-hash" {
+		t.Fatalf("actualizar contraseña: %+v err=%v", updated, err)
+	}
+	renewed, err := storage.RenewPublicShare(ctx, created.ID, "token-b")
+	if err != nil || renewed.Token != "token-b" {
+		t.Fatalf("renovar token: %+v err=%v", renewed, err)
+	}
+	if _, err := storage.PublicShareByToken(ctx, "token-a"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("el token anterior debía quedar revocado: %v", err)
+	}
+	if err := storage.MovePublicShareFileID(ctx, "file-a", "file-b"); err != nil {
+		t.Fatal(err)
+	}
+	moved, err := storage.PublicShareByFile(ctx, user.ID, "file-b")
+	if err != nil || moved.ID != created.ID {
+		t.Fatalf("el enlace debe seguir al archivo tras mover/renombrar: %+v err=%v", moved, err)
+	}
+	if err := storage.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	persisted, err := reopened.PublicShareByToken(ctx, "token-b")
+	if err != nil || persisted.FileID != "file-b" || persisted.PasswordHash != "nuevo-hash" {
+		t.Fatalf("enlace público no persistió correctamente: %+v err=%v", persisted, err)
+	}
+	if err := reopened.DeletePublicSharesByFileIDs(ctx, []string{"file-b"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reopened.PublicShareByID(ctx, created.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("eliminar el archivo debe revocar su enlace: %v", err)
+	}
+}
+
+func TestDeletePublicSharesByOwnerCanRevokeAll(t *testing.T) {
+	storage, err := Open(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer storage.Close()
+	ctx := context.Background()
+	admin, err := storage.CreateFirstAdmin(ctx, "admin", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := storage.UpsertPublicShare(ctx, admin.ID, "a", "token-a", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := storage.UpsertPublicShare(ctx, admin.ID, "b", "token-b", ""); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := storage.DeletePublicSharesByOwner(ctx, "")
+	if err != nil || removed != 2 {
+		t.Fatalf("revocación global: removed=%d err=%v", removed, err)
+	}
+	shares, err := storage.PublicShares(ctx)
+	if err != nil || len(shares) != 0 {
+		t.Fatalf("debían quedar 0 enlaces: %d err=%v", len(shares), err)
+	}
+}

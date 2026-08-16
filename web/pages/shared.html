@@ -1,0 +1,27 @@
+{{define "content"}}
+<section class="page drive-page shared-page" data-shared-page>
+  <header class="drive-files-header shared-page-header">
+    <div><h1>Compartidos</h1><p class="muted">Enlaces públicos activos. Puedes copiar, renovar o revocar cualquier enlace.</p></div>
+    {{if .Shares}}<button class="button button-danger" type="button" data-share-delete-all data-scope="{{if eq .User.Role "admin"}}all{{else}}mine{{end}}">{{template "icon-trash" .}} Eliminar todos los enlaces</button>{{end}}
+  </header>
+  {{if .Info}}<div class="alert alert-success">{{.Info}}</div>{{end}}{{if .Error}}<div class="alert alert-error">{{.Error}}</div>{{end}}
+  {{if .Shares}}
+  <div class="shared-list" role="list">
+    {{range .Shares}}
+    <article class="shared-row{{if not .Available}} is-offline{{end}}" role="listitem" data-share-row data-share-id="{{.ID}}" data-file-id="{{.FileID}}" data-share-url="{{.URL}}" data-share-embed="{{.EmbedURL}}">
+      <div class="shared-file-icon">{{template "icon-share" $}}</div>
+      <div class="shared-file-main"><strong>{{.Name}}</strong><small>{{formatBytes .Size}} · {{if .PasswordProtected}}Protegido con contraseña{{else}}Cualquier persona con el enlace{{end}}{{if $.User}}{{if eq $.User.Role "admin"}}{{if .Owner}} · {{.Owner}}{{end}}{{end}}{{end}}{{if not .Available}} · unidad desconectada{{end}}</small></div>
+      <div class="shared-stat"><small>Visitas</small><strong>{{.AccessCount}}</strong></div>
+      <div class="shared-stat"><small>Último acceso</small><strong>{{formatTime .LastAccessAt}}</strong></div>
+      <div class="shared-row-actions">
+        <button class="button button-secondary button-small" type="button" data-share-row-copy>{{template "icon-copy" $}} Copiar enlace</button>
+        <button class="icon-button" type="button" data-share-row-edit title="Administrar" aria-label="Administrar enlace">{{template "icon-more" $}}</button>
+      </div>
+    </article>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="empty-state compact-empty"><div class="empty-icon">{{template "icon-share" .}}</div><h2>No hay enlaces compartidos</h2><p>Abre el menú de un archivo y elige <strong>Compartir</strong> para crear un enlace público.</p><p><a class="button button-primary" href="/archivos">Ir a Mi unidad</a></p></div>
+  {{end}}
+</section>
+{{end}}

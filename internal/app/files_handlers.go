@@ -434,7 +434,7 @@ func (a *App) filesUploadPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	current := "/"
-	var csrfToken, targetDir string
+	var csrfToken, targetDir, destinationRoot string
 	var uploaded bool
 	var destinationStorageID string
 	for {
@@ -455,6 +455,9 @@ func (a *App) filesUploadPost(w http.ResponseWriter, r *http.Request) {
 			if err == nil {
 				current, err = normalizeExplorerPath(value)
 			}
+		case "destination_root":
+			destinationRoot, err = readSmallPart(part, 4096)
+			destinationRoot = strings.Trim(strings.TrimSpace(destinationRoot), "/")
 		case "target_dir":
 			targetDir, err = readSmallPart(part, 4096)
 			targetDir = strings.TrimSpace(targetDir)
@@ -470,7 +473,7 @@ func (a *App) filesUploadPost(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 			var virtualTarget string
-			virtualTarget, destinationStorageID, err = a.resolveExplorerUploadTarget(r, current, targetDir, fileName)
+			virtualTarget, destinationStorageID, err = a.resolveExplorerUploadTarget(r, current, destinationRoot, targetDir, fileName)
 			if err == nil {
 				parent := path.Dir(virtualTarget)
 				if parent != "/" {
@@ -503,14 +506,35 @@ func (a *App) filesUploadPost(w http.ResponseWriter, r *http.Request) {
 		a.indexer.Enqueue(destinationStorageID)
 	}
 	user := userFromContext(r.Context())
-	_ = a.store.Audit(r.Context(), user.ID, "file_upload_auto", "correcto", a.clientIP(r))
+	action := "file_upload_auto"
+	if destinationRoot != "" {
+		action = "file_upload_manual"
+	}
+	_ = a.store.Audit(r.Context(), user.ID, action, "correcto", a.clientIP(r))
 	redirectFilesOK(w, r, current, "Archivo subido; el catálogo se actualizará automáticamente")
 }
 
-func (a *App) resolveExplorerUploadTarget(r *http.Request, current, targetDir, fileName string) (string, string, error) {
+func (a *App) resolveExplorerUploadTarget(r *http.Request, current, destinationRoot, targetDir, fileName string) (string, string, error) {
 	subdir, err := safeVirtualSubdir(targetDir)
 	if err != nil {
 		return "", "", err
+	}
+	if destinationRoot != "" {
+		cfg, err := a.store.StorageVolumeByVirtualRoot(r.Context(), destinationRoot)
+		if err != nil {
+			return "", "", errors.New("unidad de destino no válida")
+		}
+		if cfg.ReadOnly || !a.storageOnline(r, cfg.ID) {
+			return "", "", errors.New("la unidad elegida no está disponible para escritura")
+		}
+		if !storagepkg.CategoryAllowsFile(cfg.Category, fileName) {
+			return "", "", errors.New("el tipo de archivo no está permitido en la unidad elegida")
+		}
+		base := "/" + cfg.VirtualRoot
+		if subdir != "" {
+			base = path.Join(base, subdir)
+		}
+		return path.Join(base, fileName), cfg.ID, nil
 	}
 	if current != "/" {
 		root, relative := splitExplorerPath(current)

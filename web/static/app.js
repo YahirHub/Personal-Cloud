@@ -204,6 +204,8 @@
     downloadTargetID = fileID;
     downloadTargetOffline = Boolean(offline);
     downloadTargetInfo = null;
+    const contextShareButton = $('[data-context-share]', downloadMenu);
+    if (contextShareButton) contextShareButton.dataset.fileId = fileID;
     setStarMenuState(false, true);
     $$('[data-requires-online]', downloadMenu).forEach((button) => { button.disabled = downloadTargetOffline; });
     downloadMenu.hidden = false;
@@ -311,6 +313,82 @@
     finally { if (submit) submit.disabled = false; }
   });
   document.addEventListener('click', (event) => { if (!event.target.closest('[data-new-menu]') && !event.target.closest('[data-global-new]')) hideNewMenu(); });
+
+  // Selector explícito de destino para Subir: Automático sigue siendo el valor
+  // predeterminado, pero el usuario puede elegir unidad y navegar carpetas.
+  const uploadLocationPanel = $('[data-upload-location-panel]', uploadDialog);
+  const uploadRoot = $('[data-upload-root]', uploadDialog);
+  const uploadTargetDir = $('[data-upload-target-dir]', uploadDialog);
+  const uploadFolderPicker = $('[data-upload-folder-picker]', uploadDialog);
+  const uploadFolderList = $('[data-upload-folder-list]', uploadDialog);
+  const uploadFolderCurrent = $('[data-upload-folder-current]', uploadDialog);
+  const uploadDestinationLabel = $('[data-upload-destination-label]', uploadDialog);
+  let uploadFolderPath = '';
+  const syncUploadDestinationLabel = () => {
+    if (!uploadDestinationLabel) return;
+    const root = String(uploadRoot?.value || '').trim();
+    const dir = String(uploadTargetDir?.value || '').trim().replace(/^\/+|\/+$/g, '');
+    if (!root) {
+      const currentDrop = $('[data-drive-files-page]');
+      uploadDestinationLabel.textContent = currentDrop?.dataset.currentPath && currentDrop.dataset.currentPath !== '/'
+        ? currentDrop.dataset.currentPath
+        : 'Automático · el sistema decide';
+      return;
+    }
+    uploadDestinationLabel.textContent = `/${root}${dir ? `/${dir}` : ''}`;
+  };
+  const loadUploadFolders = async (folderPath = '') => {
+    const root = String(uploadRoot?.value || '').trim();
+    uploadFolderPath = String(folderPath || '').replace(/^\/+|\/+$/g, '');
+    if (uploadTargetDir) uploadTargetDir.value = uploadFolderPath;
+    syncUploadDestinationLabel();
+    if (!root || !uploadFolderList || !uploadFolderPicker) {
+      if (uploadFolderPicker) uploadFolderPicker.hidden = true;
+      return;
+    }
+    uploadFolderPicker.hidden = false;
+    if (uploadFolderCurrent) uploadFolderCurrent.textContent = `/${root}${uploadFolderPath ? `/${uploadFolderPath}` : ''}`;
+    uploadFolderList.innerHTML = '<span class="muted">Cargando carpetas…</span>';
+    try {
+      const params = new URLSearchParams({ root, path: uploadFolderPath });
+      const response = await fetch(`/api/carpetas?${params}`, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'No se pudieron leer las carpetas.');
+      uploadFolderList.replaceChildren();
+      if (!data.folders?.length) {
+        const empty = document.createElement('span'); empty.className = 'muted'; empty.textContent = 'No hay subcarpetas.'; uploadFolderList.append(empty);
+      } else {
+        data.folders.forEach((folder) => {
+          const button = document.createElement('button');
+          button.type = 'button'; button.className = 'folder-list-item';
+          const icon = document.createElement('span'); icon.className = 'folder-list-icon'; icon.textContent = '📁';
+          const label = document.createElement('span'); label.textContent = folder.name;
+          button.append(icon, label);
+          button.addEventListener('click', () => loadUploadFolders(folder.path));
+          uploadFolderList.append(button);
+        });
+      }
+    } catch (error) {
+      uploadFolderList.replaceChildren();
+      const failed = document.createElement('span'); failed.className = 'muted'; failed.textContent = error.message || 'No se pudieron cargar las carpetas.'; uploadFolderList.append(failed);
+    }
+  };
+  $('[data-upload-choose-location]', uploadDialog)?.addEventListener('click', () => {
+    if (!uploadLocationPanel) return;
+    uploadLocationPanel.hidden = !uploadLocationPanel.hidden;
+    if (!uploadLocationPanel.hidden && uploadRoot?.value) loadUploadFolders(uploadTargetDir?.value || '');
+  });
+  uploadRoot?.addEventListener('change', () => {
+    uploadFolderPath = '';
+    if (uploadTargetDir) uploadTargetDir.value = '';
+    loadUploadFolders('');
+    syncUploadDestinationLabel();
+  });
+  uploadTargetDir?.addEventListener('input', () => { uploadFolderPath = uploadTargetDir.value.trim().replace(/^\/+|\/+$/g, ''); syncUploadDestinationLabel(); });
+  $('[data-upload-folder-up]', uploadDialog)?.addEventListener('click', () => {
+    const parts = uploadFolderPath.split('/').filter(Boolean); parts.pop(); loadUploadFolders(parts.join('/'));
+  });
+  syncUploadDestinationLabel();
 
   // Arrastrar y soltar archivos sobre Mi unidad o una carpeta, como en Drive.
   const filesPageDrop = $('[data-drive-files-page]');
@@ -1274,6 +1352,7 @@
     if (!card || !viewer || !stage || !mediaViewerKinds.has(card.dataset.kind || '')) return false;
     $$('video,audio', stage).forEach((media) => media.pause());
     currentMediaID = card.dataset.mediaId || '';
+    viewer.dataset.currentFileId = currentMediaID;
     activeMediaCard = card;
     zoom = 1;
     stopVideoProgressLoop();
@@ -1492,6 +1571,7 @@
     $$('video,audio', stage).forEach((media) => { media.pause(); media.removeAttribute('src'); media.load(); });
     currentIndex = -1;
     currentMediaID = '';
+    delete viewer.dataset.currentFileId;
     zoom = 1;
     stopVideoProgressLoop();
     videoScrubbing = false;
@@ -1763,6 +1843,7 @@
   const bulkToolbar = $('[data-bulk-toolbar]');
   const selectionCount = $('[data-selection-count]');
   const bulkStarButton = $('[data-bulk-star]');
+  const bulkShareButton = $('[data-bulk-share]');
   const bulkStarLabel = $('[data-bulk-star-label]', bulkStarButton);
   const bulkDownloadButton = $('[data-bulk-download]');
   const bulkMoveButton = $('[data-bulk-move]');
@@ -1770,6 +1851,7 @@
   const selectionContext = $('[data-selection-context]');
   const selectionContextStar = $('[data-selection-context-star]', selectionContext);
   const selectionContextStarLabel = $('[data-selection-context-star-label]', selectionContext);
+  const selectionContextShare = $('[data-selection-context-share]', selectionContext);
   const selectionContextDownload = $('[data-selection-context-download]', selectionContext);
   const selectionContextMove = $('[data-selection-context-move]', selectionContext);
   const selectionContextDelete = $('[data-selection-context-delete]', selectionContext);
@@ -1820,6 +1902,7 @@
     selectable.forEach((element) => element.classList.toggle('is-selected', selectedIDs.has(element.dataset.selectableFile)));
     if (selectionCount) selectionCount.textContent = String(selectedIDs.size);
     if (bulkToolbar) bulkToolbar.hidden = selectedIDs.size === 0;
+    if (bulkShareButton) bulkShareButton.hidden = selectedIDs.size !== 1;
     if (bulkStarButton) {
       const allStarred = selectedIDs.size > 0 && [...selectedIDs].every((id) => selectable.some((element) => element.dataset.selectableFile === id && element.dataset.starred === 'true'));
       bulkStarButton.dataset.starred = String(allStarred);
@@ -1847,6 +1930,7 @@
     const allStarred = selectedIDs.size > 0 && [...selectedIDs].every((id) => selectable.some((element) => element.dataset.selectableFile === id && element.dataset.starred === 'true'));
     if (selectionContextStarLabel) selectionContextStarLabel.textContent = allStarred ? 'Quitar de Destacados' : 'Agregar a Destacados';
     if (selectionContextStar) selectionContextStar.dataset.starred = String(allStarred);
+    if (selectionContextShare) selectionContextShare.hidden = selectedIDs.size !== 1;
   };
   const showSelectionContext = (x, y) => {
     if (!selectionContext || selectedIDs.size === 0) return;
@@ -1950,6 +2034,11 @@
     const anchor = document.createElement('a');
     anchor.href = data.url; anchor.hidden = true; document.body.append(anchor); anchor.click(); anchor.remove();
   };
+  bulkShareButton?.addEventListener('click', () => {
+    if (selectedIDs.size !== 1) return;
+    const id = [...selectedIDs][0];
+    window.PersonalCloudShare?.open?.(id);
+  });
   bulkStarButton?.addEventListener('click', async () => {
     const ids = [...selectedIDs];
     if (!ids.length) return;
@@ -2050,6 +2139,7 @@
     try { await deleteIDs([...selectedIDs]); } catch (error) { window.alert(error.message); }
   });
   selectionContextStar?.addEventListener('click', () => { hideSelectionContext(); bulkStarButton?.click(); });
+  selectionContextShare?.addEventListener('click', () => { hideSelectionContext(); bulkShareButton?.click(); });
   selectionContextDownload?.addEventListener('click', () => { hideSelectionContext(); bulkDownloadButton?.click(); });
   selectionContextMove?.addEventListener('click', () => { hideSelectionContext(); bulkMoveButton?.click(); });
   selectionContextDelete?.addEventListener('click', () => { hideSelectionContext(); bulkDeleteButton?.click(); });

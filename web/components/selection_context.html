@@ -1,6 +1,7 @@
 {{define "selection-context"}}
 <div class="context-menu selection-context-menu" data-selection-context hidden role="menu" aria-label="Acciones de la selección">
   <button type="button" role="menuitem" data-selection-context-star>{{template "icon-star" .}}<span data-selection-context-star-label>Agregar a Destacados</span></button>
+  <button type="button" role="menuitem" data-selection-context-share hidden>{{template "icon-share" .}}<span>Compartir</span></button>
   <button type="button" role="menuitem" data-selection-context-download>{{template "icon-download" .}}<span>Descargar ZIP</span></button>
   <button type="button" role="menuitem" data-selection-context-move>{{template "icon-move" .}}<span>Mover</span></button>
   <div class="context-menu-separator" aria-hidden="true"></div>

@@ -646,3 +646,111 @@ func TestFileListingURLPreservesDriveFilters(t *testing.T) {
 		}
 	}
 }
+
+func TestUploadDialogAllowsExplicitUnitAndFolder(t *testing.T) {
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := store.User{Username: "admin", Role: "admin"}
+	data := pageData{
+		Title: "Mi unidad", CurrentPath: "/archivos", User: &user, CSRFToken: "csrf", MaxUploadBytes: 1024,
+		ExplorerPath: "/", ExplorerCanWrite: true, ListingMode: "infinito",
+		MoveDestinations: []moveDestination{{Name: "USB Clase", VirtualRoot: "USB", Online: true}},
+	}
+	var out bytes.Buffer
+	if err := renderer.Render(&out, "files", data); err != nil {
+		t.Fatal(err)
+	}
+	html := out.String()
+	for _, want := range []string{`data-upload-choose-location`, `name="destination_root"`, `data-upload-folder-picker`, `data-upload-target-dir`, `Automático · usar la mejor unidad`, `USB Clase`} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("selector de destino de subida incompleto: falta %q", want)
+		}
+	}
+	rootPos := strings.Index(html, `name="destination_root"`)
+	filePos := strings.Index(html, `name="file"`)
+	if rootPos < 0 || filePos < 0 || rootPos >= filePos {
+		t.Fatalf("destination_root debe viajar antes del stream del archivo: root=%d file=%d", rootPos, filePos)
+	}
+}
+
+func TestSharingUIAndPublicVideoEmbedAreRendered(t *testing.T) {
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := store.User{Username: "admin", Role: "admin"}
+	var out bytes.Buffer
+	if err := renderer.Render(&out, "dashboard", pageData{Title: "Inicio", CurrentPath: "/inicio", User: &user, CSRFToken: "csrf"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`href="/compartidos"`, `data-context-share`, `data-share-dialog`, `data-viewer-share`, `data-document-viewer-share`, `/static/share_management.js`} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("UI autenticada de compartir incompleta: falta %q", want)
+		}
+	}
+
+	out.Reset()
+	public := pageData{
+		Title: "clase.mp4", PublicSharePage: true, ShareEmbed: true,
+		PublicShare: &publicShareView{
+			Name: "clase.mp4", Viewer: "video", Size: 1234, Available: true,
+			ContentURL: "/s/token/contenido?access=ticket", DownloadURL: "/s/token/contenido?access=ticket&download=1",
+			VideoQualitiesURL: "/s/token/video/calidades?access=ticket", VideoPrepareURL: "/s/token/video/preparar?access=ticket", VideoStatusURL: "/s/token/video/estado?access=ticket",
+		},
+	}
+	if err := renderer.Render(&out, "public_share", public); err != nil {
+		t.Fatal(err)
+	}
+	html := out.String()
+	for _, want := range []string{`data-public-video-player`, `data-public-video-quality`, `/s/token/video/calidades?access=ticket`, `/static/share.js`} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("embed público de video incompleto: falta %q", want)
+		}
+	}
+	if strings.Contains(html, `/static/app.js`) || strings.Contains(html, `/static/document_viewer.js`) {
+		t.Fatal("la página pública no debe cargar scripts privados del shell autenticado")
+	}
+}
+
+func TestProtectedPublicShareFormDoesNotDependOnThirdPartyCSRFCookie(t *testing.T) {
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	data := pageData{
+		Title: "privado.pdf", PublicSharePage: true, ShareEmbed: true, SharePasswordRequired: true,
+		PublicShare: &publicShareView{Name: "privado.pdf", PasswordProtected: true},
+	}
+	if err := renderer.Render(&out, "public_share", data); err != nil {
+		t.Fatal(err)
+	}
+	html := out.String()
+	if !strings.Contains(html, `name="password"`) {
+		t.Fatal("el embed protegido debe mostrar el formulario de contraseña")
+	}
+	if strings.Contains(html, `name="csrf_token"`) {
+		t.Fatal("el desbloqueo público no debe depender de una cookie CSRF de terceros")
+	}
+}
+
+func TestShareAccessTicketIsSignedAndInvalidatedByPasswordChange(t *testing.T) {
+	a := &App{}
+	copy(a.shareSecret[:], []byte("0123456789abcdef0123456789abcdef"))
+	share := store.PublicShare{ID: "share-1", Token: "token-a", PasswordHash: "hash-a"}
+	ticket := a.newShareAccessTicket(share, time.Hour)
+	if !a.validShareAccessTicket(share, ticket) {
+		t.Fatal("el ticket recién emitido debe ser válido")
+	}
+	share.PasswordHash = "hash-b"
+	if a.validShareAccessTicket(share, ticket) {
+		t.Fatal("cambiar la contraseña debe invalidar tickets anteriores")
+	}
+	share.PasswordHash = "hash-a"
+	share.Token = "token-b"
+	if a.validShareAccessTicket(share, ticket) {
+		t.Fatal("renovar el enlace debe invalidar tickets anteriores")
+	}
+}

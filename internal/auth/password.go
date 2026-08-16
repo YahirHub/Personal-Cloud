@@ -36,7 +36,22 @@ func HashPassword(password string) (string, error) {
 	if err := ValidatePassword(password); err != nil {
 		return "", err
 	}
+	return hashPassword(password)
+}
 
+// HashSharePassword usa el mismo formato robusto que las contraseñas de usuario,
+// pero permite secretos más cortos para enlaces compartidos sin relajar el login.
+func HashSharePassword(password string) (string, error) {
+	if len(password) < 6 {
+		return "", errors.New("la contraseña del enlace debe tener al menos 6 caracteres")
+	}
+	if len(password) > 128 {
+		return "", errors.New("la contraseña del enlace es demasiado larga")
+	}
+	return hashPassword(password)
+}
+
+func hashPassword(password string) (string, error) {
 	salt := make([]byte, pbkdf2SaltLength)
 	if _, err := rand.Read(salt); err != nil {
 		return "", fmt.Errorf("generar salt: %w", err)

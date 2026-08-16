@@ -1,0 +1,40 @@
+{{define "share-dialog"}}
+<dialog class="share-dialog" data-share-dialog>
+  <form class="share-dialog-card" data-share-form>
+    <header class="drive-properties-head">
+      <div><small>Acceso general</small><h2 data-share-title>Compartir archivo</h2></div>
+      <button class="icon-button" type="button" data-share-close aria-label="Cerrar">{{template "icon-close" .}}</button>
+    </header>
+    <p class="muted compact-copy">Cualquier persona que tenga el enlace podrá abrir el archivo. Puedes protegerlo con contraseña y revocar o renovar el enlace en cualquier momento.</p>
+    <div class="share-access-card">
+      <label>Acceso
+        <select data-share-access-mode name="access_mode">
+          <option value="public">Cualquier persona con el enlace</option>
+          <option value="password">Cualquier persona con el enlace y contraseña</option>
+        </select>
+      </label>
+      <label data-share-password-row hidden>Contraseña
+        <input type="password" data-share-password name="password" minlength="6" maxlength="128" autocomplete="new-password" placeholder="Mínimo 6 caracteres">
+        <small data-share-password-help>La contraseña no se muestra después de guardarla. Déjala vacía para conservar la actual.</small>
+      </label>
+    </div>
+    <div class="share-link-panel" data-share-link-panel hidden>
+      <label>Enlace público
+        <div class="share-copy-row"><input data-share-url readonly><button class="button button-secondary" type="button" data-share-copy>{{template "icon-copy" .}} Copiar</button></div>
+      </label>
+      <label>Embed
+        <div class="share-copy-row"><input data-share-embed readonly><button class="button button-secondary" type="button" data-share-copy-embed>{{template "icon-copy" .}} Copiar</button></div>
+      </label>
+      <small>El enlace embed se puede usar dentro de un <code>&lt;iframe&gt;</code>. Si tiene contraseña, mostrará el formulario dentro del propio embed.</small>
+    </div>
+    <div class="share-status" data-share-status></div>
+    <div class="dialog-actions share-dialog-actions">
+      <button class="button button-danger" type="button" data-share-revoke hidden>Dejar de compartir</button>
+      <button class="button button-secondary" type="button" data-share-renew hidden>Renovar enlace</button>
+      <span class="share-action-spacer"></span>
+      <button class="button button-ghost" type="button" data-share-close>Cancelar</button>
+      <button class="button button-primary" type="submit" data-share-save>Crear enlace</button>
+    </div>
+  </form>
+</dialog>
+{{end}}

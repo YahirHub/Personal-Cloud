@@ -9,15 +9,20 @@
   <meta name="description" content="{{.Description}}">
   {{if .User}}<meta name="csrf-token" content="{{.CSRFToken}}">{{end}}
   <link rel="stylesheet" href="/static/app.css">
+  {{if .User}}
   <script src="/static/app.js" defer></script>
   <script src="/static/document_viewer.js" defer></script>
+  <script src="/static/share_management.js" defer></script>
+  {{else if .PublicSharePage}}
+  <script src="/static/share.js" defer></script>
+  {{end}}
 </head>
-<body class="{{if .User}}app-body{{else}}auth-body{{end}}">
+<body class="{{if .PublicSharePage}}share-body{{else if .User}}app-body{{else}}auth-body{{end}}">
   {{if .User}}
     {{template "topbar" .}}
     {{template "sidebar" .}}
     <main class="app-main">{{template "content" .}}</main>
-    {{template "download-context" .}}{{template "selection-menu" .}}{{template "selection-context" .}}{{template "unit-context" .}}{{template "new-context" .}}{{template "delete-confirm" .}}{{template "media-viewer" .}}{{template "document-viewer" .}}
+    {{template "download-context" .}}{{template "selection-menu" .}}{{template "selection-context" .}}{{template "unit-context" .}}{{template "new-context" .}}{{template "delete-confirm" .}}{{template "share-dialog" .}}{{template "media-viewer" .}}{{template "document-viewer" .}}
   {{else}}
     <main class="auth-main">{{template "content" .}}</main>
   {{end}}

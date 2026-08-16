@@ -22,7 +22,7 @@ var (
 	ErrAdminExists = errors.New("ya existe un administrador")
 )
 
-const stateVersion = 4
+const stateVersion = 5
 
 type Store struct {
 	mu        sync.RWMutex
@@ -37,6 +37,7 @@ type persistedState struct {
 	Sessions []Session       `json:"sessions"`
 	Volumes  []StorageVolume `json:"volumes,omitempty"`
 	Stars    []FileStar      `json:"stars,omitempty"`
+	Shares   []PublicShare   `json:"shares,omitempty"`
 	Settings AppSettings     `json:"settings,omitempty"`
 }
 
@@ -483,6 +484,7 @@ func cloneState(state persistedState) persistedState {
 		Sessions: append([]Session(nil), state.Sessions...),
 		Volumes:  append([]StorageVolume(nil), state.Volumes...),
 		Stars:    append([]FileStar(nil), state.Stars...),
+		Shares:   append([]PublicShare(nil), state.Shares...),
 		Settings: state.Settings,
 	}
 }
@@ -608,4 +610,11 @@ func randomID(size int) (string, error) {
 		return "", fmt.Errorf("generar id: %w", err)
 	}
 	return hex.EncodeToString(buf), nil
+}
+
+// UsersSnapshot devuelve una copia de los usuarios para vistas administrativas.
+func (s *Store) UsersSnapshot() []User {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]User(nil), s.state.Users...)
 }

@@ -395,6 +395,7 @@
     state.openSequence++;
     const sequence = state.openSequence;
     state.id = id;
+    dialog.dataset.currentFileId = id;
     state.viewer = viewer;
     state.editable = Boolean(info.editable);
     state.content = '';
@@ -443,6 +444,7 @@
     state.dirty = false;
     resetSurfaces();
     if (loading) loading.hidden = true;
+    delete dialog.dataset.currentFileId;
     dialog.close();
     return true;
   };

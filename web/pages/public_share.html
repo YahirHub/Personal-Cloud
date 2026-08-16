@@ -1,0 +1,55 @@
+{{define "content"}}
+<section class="public-share-page{{if .ShareEmbed}} is-embed{{end}}" data-public-share>
+  {{if not .ShareEmbed}}<header class="public-share-brand"><a href="/" aria-label="Nube"><span class="public-share-logo">◆</span><strong>Nube</strong></a></header>{{end}}
+  {{if .SharePasswordRequired}}
+    <div class="public-share-password-card">
+      <div class="public-share-lock">{{template "icon-link" .}}</div>
+      <small>Archivo protegido</small>
+      <h1>{{.PublicShare.Name}}</h1>
+      <p>Este enlace requiere una contraseña para ver o descargar el archivo.</p>
+      {{if .SharePasswordError}}<div class="alert alert-error">{{.SharePasswordError}}</div>{{end}}
+      <form method="post" class="public-share-password-form">
+        <label>Contraseña<input type="password" name="password" required minlength="6" maxlength="128" autofocus autocomplete="current-password"></label>
+        <button class="button button-primary full" type="submit">Abrir archivo</button>
+      </form>
+    </div>
+  {{else}}
+    <main class="public-share-shell">
+      {{if not .ShareEmbed}}
+      <header class="public-share-toolbar"><div class="public-share-title"><small>Compartido públicamente</small><h1>{{.PublicShare.Name}}</h1><span>{{formatBytes .PublicShare.Size}}{{if .PublicShare.PasswordProtected}} · protegido con contraseña{{end}}</span></div><a class="button button-secondary" href="{{.PublicShare.DownloadURL}}">{{template "icon-download" .}} Descargar</a></header>
+      {{end}}
+      {{if not .PublicShare.Available}}
+        <div class="public-share-unavailable"><strong>Archivo temporalmente no disponible</strong><p>La unidad que contiene este archivo no está conectada. El mismo enlace volverá a funcionar cuando se reconecte.</p></div>
+      {{else if eq .PublicShare.Viewer "image"}}
+        <div class="public-share-canvas public-share-image"><img src="{{.PublicShare.ContentURL}}" alt="{{.PublicShare.Name}}"></div>
+      {{else if eq .PublicShare.Viewer "video"}}
+        <div class="public-share-canvas public-share-video-player" data-public-video-player data-original-url="{{.PublicShare.ContentURL}}" data-qualities-url="{{.PublicShare.VideoQualitiesURL}}" data-prepare-url="{{.PublicShare.VideoPrepareURL}}" data-status-url="{{.PublicShare.VideoStatusURL}}">
+          <video data-public-video preload="metadata" playsinline src="{{.PublicShare.ContentURL}}"></video>
+          <div class="viewer-video-controls public-video-controls">
+            <div class="viewer-video-progress"><input type="range" min="0" max="1000" value="0" step="0.01" data-public-video-progress aria-label="Posición del video"></div>
+            <div class="viewer-video-control-row">
+              <button class="video-control-button" type="button" data-public-video-play aria-label="Reproducir"><span data-public-play-icon>{{template "icon-play" .}}</span><span data-public-pause-icon hidden>{{template "icon-pause" .}}</span></button>
+              <span class="viewer-video-time"><span data-public-video-current>0:00</span> / <span data-public-video-duration>0:00</span></span>
+              <button class="video-control-button" type="button" data-public-video-mute aria-label="Silenciar">{{template "icon-volume" .}}</button>
+              <input class="viewer-video-volume" type="range" min="0" max="1" step="0.05" value="1" data-public-video-volume aria-label="Volumen">
+              <div class="viewer-video-spacer"></div>
+              <label class="viewer-video-speed"><select data-public-video-speed aria-label="Velocidad"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label>
+              <div class="viewer-quality-inline" data-public-video-quality-control hidden><select data-public-video-quality aria-label="Calidad de video"><option value="original">Original</option></select><small data-public-video-quality-status aria-live="polite"></small></div>
+              <button class="video-control-button" type="button" data-public-video-fullscreen aria-label="Pantalla completa">{{template "icon-fullscreen" .}}</button>
+            </div>
+          </div>
+        </div>
+      {{else if eq .PublicShare.Viewer "audio"}}
+        <div class="public-share-canvas public-share-audio"><audio controls preload="metadata" src="{{.PublicShare.ContentURL}}"></audio></div>
+      {{else if eq .PublicShare.Viewer "html"}}
+        <iframe class="public-share-document" src="{{.PublicShare.ContentURL}}" sandbox="" referrerpolicy="no-referrer" title="{{.PublicShare.Name}}"></iframe>
+      {{else if or (eq .PublicShare.Viewer "pdf") (eq .PublicShare.Viewer "text") (eq .PublicShare.Viewer "markdown")}}
+        <iframe class="public-share-document" src="{{.PublicShare.ContentURL}}" referrerpolicy="no-referrer" title="{{.PublicShare.Name}}"></iframe>
+      {{else}}
+        <div class="public-share-unavailable"><strong>No hay vista previa para este formato</strong><p>Puedes descargar el archivo original.</p><a class="button button-primary" href="{{.PublicShare.DownloadURL}}">{{template "icon-download" .}} Descargar</a></div>
+      {{end}}
+      {{if .ShareEmbed}}<a class="public-embed-download" href="{{.PublicShare.DownloadURL}}" target="_blank" rel="noopener">Descargar</a>{{end}}
+    </main>
+  {{end}}
+</section>
+{{end}}

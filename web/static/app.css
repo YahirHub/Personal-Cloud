@@ -1239,3 +1239,102 @@ input:focus,select:focus { border-color:#a8c7fa; box-shadow:0 0 0 1px #a8c7fa; }
   .delete-confirm-card { grid-template-columns:1fr; }
   .delete-confirm-icon { width:40px; height:40px; }
 }
+
+/* R24: destino de subida explícito y enlaces públicos estilo Drive. */
+.upload-destination-summary { display:flex; align-items:center; justify-content:space-between; gap:12px; border:1px solid #3c4043; border-radius:12px; background:#202124; padding:12px 14px; }
+.upload-destination-summary > div { min-width:0; }
+.upload-destination-summary small,.upload-destination-summary strong { display:block; }
+.upload-destination-summary small { color:#9aa0a6; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+.upload-destination-summary strong { overflow:hidden; margin-top:3px; color:#e8eaed; text-overflow:ellipsis; white-space:nowrap; font-size:13px; font-weight:500; }
+.upload-location-panel { display:grid; gap:12px; border:1px solid #3c4043; border-radius:14px; background:#17191c; padding:14px; }
+.upload-folder-picker { max-height:300px; overflow:hidden; }
+.folder-list { display:grid; max-height:190px; overflow:auto; gap:4px; }
+.folder-list-item { display:flex; width:100%; min-height:38px; align-items:center; gap:10px; border:0; border-radius:8px; background:transparent; color:#e8eaed; padding:7px 9px; font:inherit; text-align:left; cursor:pointer; }
+.folder-list-item:hover { background:#303134; }
+.folder-list-icon { opacity:.88; }
+
+.share-dialog { width:min(640px,calc(100% - 28px)); max-width:none; border:0; padding:0; background:transparent; }
+.share-dialog::backdrop { background:rgba(0,0,0,.72); backdrop-filter:blur(4px); }
+.share-dialog-card { display:grid; gap:16px; border:1px solid #3c4043; border-radius:24px; background:#282a2d; color:#e8eaed; padding:22px; box-shadow:0 24px 80px rgba(0,0,0,.52); }
+.share-access-card { display:grid; gap:12px; border:1px solid #3c4043; border-radius:14px; background:#202124; padding:14px; }
+.share-link-panel { display:grid; gap:12px; border-top:1px solid #3c4043; padding-top:14px; }
+.share-copy-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
+.share-copy-row input { min-width:0; }
+.share-status { min-height:20px; color:#bdc1c6; font-size:12px; }
+.share-dialog-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.share-action-spacer { flex:1 1 auto; }
+
+.shared-page { width:min(1420px,calc(100% - 48px)); }
+.shared-page-header { align-items:flex-start; }
+.shared-page-header h1 { margin:0 0 6px; font-size:30px; font-weight:400; letter-spacing:-.02em; }
+.shared-list { overflow:hidden; border:1px solid #3c4043; border-radius:16px; background:#202124; }
+.shared-row { display:grid; grid-template-columns:42px minmax(240px,1fr) 90px minmax(150px,200px) auto; align-items:center; gap:14px; min-height:76px; border-top:1px solid #3c4043; padding:10px 14px; }
+.shared-row:first-child { border-top:0; }
+.shared-row:hover { background:#282a2d; }
+.shared-row.is-offline { opacity:.72; }
+.shared-file-icon { display:grid; width:38px; height:38px; place-items:center; border-radius:50%; background:#303134; color:#8ab4f8; }
+.shared-file-icon .nav-icon { width:20px; height:20px; }
+.shared-file-main { min-width:0; }
+.shared-file-main strong,.shared-file-main small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.shared-file-main strong { font-size:14px; font-weight:500; }
+.shared-file-main small { margin-top:4px; color:#9aa0a6; font-size:11px; }
+.shared-stat { display:grid; }
+.shared-stat small { color:#9aa0a6; font-size:10px; }
+.shared-stat strong { margin-top:2px; color:#e8eaed; font-size:12px; font-weight:500; }
+.shared-row-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; }
+
+.viewer-share { top:14px; right:158px; }
+.viewer-meta { padding-right:204px; }
+
+.share-body { min-height:100vh; background:#111315; color:#e8eaed; color-scheme:dark; }
+.share-body .auth-main { width:100%; }
+.public-share-page { min-height:100vh; background:#111315; color:#e8eaed; }
+.public-share-brand { display:flex; height:68px; align-items:center; border-bottom:1px solid #303134; background:#111315; padding:0 24px; }
+.public-share-brand a { display:flex; align-items:center; gap:10px; color:#e8eaed; text-decoration:none; font-size:20px; }
+.public-share-logo { color:#8ab4f8; }
+.public-share-shell { display:grid; min-height:calc(100vh - 68px); grid-template-rows:auto minmax(0,1fr); }
+.public-share-toolbar { display:flex; min-height:82px; align-items:center; justify-content:space-between; gap:18px; border-bottom:1px solid #303134; background:#202124; padding:12px 22px; }
+.public-share-title { min-width:0; }
+.public-share-title small,.public-share-title h1,.public-share-title span { display:block; }
+.public-share-title h1 { overflow:hidden; margin:2px 0; font-size:18px; font-weight:500; letter-spacing:0; text-overflow:ellipsis; white-space:nowrap; }
+.public-share-title small,.public-share-title span { color:#9aa0a6; font-size:11px; }
+.public-share-canvas { position:relative; display:flex; min-height:0; align-items:center; justify-content:center; overflow:hidden; background:#050607; }
+.public-share-image img { display:block; max-width:100%; max-height:calc(100vh - 150px); object-fit:contain; }
+.public-share-audio { padding:24px; }
+.public-share-audio audio { width:min(680px,92vw); }
+.public-share-video-player { min-height:calc(100vh - 150px); }
+.public-share-video-player video { width:100%; height:100%; max-height:calc(100vh - 150px); object-fit:contain; background:#000; }
+.public-video-controls { display:block; }
+.public-share-document { width:100%; min-height:calc(100vh - 150px); border:0; background:#fff; }
+.public-share-unavailable { display:grid; place-items:center; align-content:center; gap:8px; min-height:420px; padding:28px; text-align:center; background:#17191c; }
+.public-share-unavailable p { max-width:620px; margin:0; color:#9aa0a6; }
+.public-share-password-card { width:min(460px,calc(100% - 28px)); margin:10vh auto 0; border:1px solid #3c4043; border-radius:24px; background:#202124; padding:28px; box-shadow:0 24px 80px rgba(0,0,0,.38); }
+.public-share-password-card h1 { margin:4px 0 10px; font-size:24px; font-weight:500; letter-spacing:-.02em; }
+.public-share-password-card p { color:#bdc1c6; }
+.public-share-lock { display:grid; width:48px; height:48px; place-items:center; margin-bottom:16px; border-radius:50%; background:#303134; color:#8ab4f8; }
+.public-share-lock .inline-icon { width:24px; height:24px; }
+.public-share-password-form { display:grid; gap:14px; margin-top:20px; }
+.public-share-page.is-embed { min-height:100vh; }
+.public-share-page.is-embed .public-share-shell { min-height:100vh; grid-template-rows:minmax(0,1fr); }
+.public-share-page.is-embed .public-share-video-player,.public-share-page.is-embed .public-share-document { min-height:100vh; }
+.public-share-page.is-embed .public-share-video-player video { max-height:100vh; }
+.public-embed-download { position:fixed; z-index:9; top:12px; right:12px; border:1px solid rgba(255,255,255,.22); border-radius:18px; background:rgba(0,0,0,.58); color:#fff; padding:7px 12px; text-decoration:none; backdrop-filter:blur(6px); }
+
+@media (max-width:820px) {
+  .shared-row { grid-template-columns:36px minmax(0,1fr) auto; }
+  .shared-stat { display:none; }
+  .shared-row-actions .button { display:none; }
+  .share-copy-row { grid-template-columns:1fr; }
+}
+@media (max-width:620px) {
+  .viewer-share { right:149px; }
+  .viewer-delete { right:104px; }
+  .viewer-star { right:59px; }
+  .viewer-meta { padding-right:194px; }
+  .upload-destination-summary { align-items:flex-start; flex-direction:column; }
+  .public-share-toolbar { align-items:flex-start; flex-direction:column; }
+  .public-share-document,.public-share-video-player { min-height:calc(100vh - 190px); }
+}
+.public-share-video-player .public-video-staging { position:absolute; inset:0; z-index:1; opacity:0; pointer-events:none; }
+.public-share-video-player > video:not(.public-video-staging) { position:relative; z-index:2; }
+.public-share-video-player .viewer-video-controls { z-index:6; }

@@ -94,6 +94,8 @@ type renderData struct {
 	}
 	SettingsSyncText string
 	IntegrityUnits   []any
+	PublicSharePage  bool
+	Shares           []any
 }
 
 func TestRenderPages(t *testing.T) {
@@ -101,7 +103,7 @@ func TestRenderPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pages := []string{"setup", "login", "onboarding", "dashboard", "storage", "files", "photos", "settings"}
+	pages := []string{"setup", "login", "onboarding", "dashboard", "storage", "files", "photos", "settings", "shared"}
 	for _, page := range pages {
 		t.Run(page, func(t *testing.T) {
 			data := renderData{Title: "Prueba", Description: "Prueba", CSRFToken: "token", ListingMode: "infinito", ListingBaseURL: "/galeria", ExplorerPath: "/"}

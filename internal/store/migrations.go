@@ -22,6 +22,9 @@ func migrateState(state persistedState) (persistedState, bool, error) {
 	}
 	if state.Version == 3 {
 		state.Version = 4
+	}
+	if state.Version == 4 {
+		state.Version = 5
 		return state, true, nil
 	}
 	if state.Version < stateVersion {
@@ -97,6 +100,31 @@ func validateState(state persistedState) error {
 			return errors.New("raíz virtual duplicada")
 		}
 		virtualRoots[rk] = struct{}{}
+	}
+
+	shareIDs := make(map[string]struct{}, len(state.Shares))
+	shareTokens := make(map[string]struct{}, len(state.Shares))
+	shareFiles := make(map[string]struct{}, len(state.Shares))
+	for _, share := range state.Shares {
+		if share.ID == "" || share.OwnerUserID == "" || share.FileID == "" || share.Token == "" {
+			return errors.New("enlace compartido incompleto")
+		}
+		if _, exists := userIDs[share.OwnerUserID]; !exists {
+			return errors.New("enlace compartido referencia un usuario inexistente")
+		}
+		if _, exists := shareIDs[share.ID]; exists {
+			return errors.New("id de enlace compartido duplicado")
+		}
+		shareIDs[share.ID] = struct{}{}
+		if _, exists := shareTokens[share.Token]; exists {
+			return errors.New("token de enlace compartido duplicado")
+		}
+		shareTokens[share.Token] = struct{}{}
+		key := share.OwnerUserID + "\x00" + share.FileID
+		if _, exists := shareFiles[key]; exists {
+			return errors.New("archivo compartido duplicado para el mismo usuario")
+		}
+		shareFiles[key] = struct{}{}
 	}
 
 	starKeys := make(map[string]struct{}, len(state.Stars))

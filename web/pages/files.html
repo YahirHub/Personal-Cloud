@@ -115,7 +115,22 @@
   <form method="post" action="/archivos/subir" enctype="multipart/form-data" class="dialog-card">
     <div class="dialog-head"><div><div class="eyebrow">Nuevo</div><h2>{{if eq .ExplorerPath "/"}}Subir a Mi unidad{{else}}Subir a {{.ExplorerPath}}{{end}}</h2></div><button class="icon-button" type="button" data-close-upload aria-label="Cerrar">{{template "icon-close" .}}</button></div>
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="current_path" value="{{.ExplorerPath}}">
-    <label>Archivo<input type="file" name="file" required></label><label>Subcarpeta opcional<input name="target_dir" placeholder="Ej. 2026/Agosto"></label><small>Máximo: {{formatBytes .MaxUploadBytes}}. {{if eq .ExplorerPath "/"}}El servidor elegirá automáticamente una unidad compatible.{{else}}El archivo se guardará exactamente dentro de esta ubicación.{{end}}</small><button class="button button-primary full" type="submit">Subir</button>
+    <div class="upload-destination-summary"><div><small>Ubicación</small><strong data-upload-destination-label>{{if eq .ExplorerPath "/"}}Automático · el sistema decide{{else}}{{.ExplorerPath}}{{end}}</strong></div><button class="button button-secondary button-small" type="button" data-upload-choose-location>Elegir ubicación</button></div>
+    <div class="upload-location-panel" data-upload-location-panel hidden>
+      <label>Unidad
+        <select name="destination_root" data-upload-root>
+          <option value="">{{if eq .ExplorerPath "/"}}Automático · usar la mejor unidad{{else}}Ubicación actual{{end}}</option>
+          {{range .MoveDestinations}}{{if and .Online (not .ReadOnly)}}<option value="{{.VirtualRoot}}">{{.Name}} · /{{.VirtualRoot}}</option>{{end}}{{end}}
+        </select>
+      </label>
+      <div class="folder-picker upload-folder-picker" data-upload-folder-picker hidden>
+        <div class="folder-picker-head"><div><small>Carpeta elegida</small><strong data-upload-folder-current>/</strong></div><button class="button button-ghost button-small" type="button" data-upload-folder-up>Subir nivel</button></div>
+        <div class="folder-list" data-upload-folder-list><span class="muted">Selecciona una unidad para navegar sus carpetas.</span></div>
+      </div>
+      <label>Ruta relativa<input name="target_dir" data-upload-target-dir placeholder="Ej. Tareas/Matemáticas" autocomplete="off"><small>Puedes navegar las carpetas o escribir una ruta. Si no existe, se creará de forma segura.</small></label>
+    </div>
+    <label>Archivo<input type="file" name="file" required></label>
+    <small>Máximo: {{formatBytes .MaxUploadBytes}}. Si no eliges una unidad, Nube conserva el comportamiento automático.</small><button class="button button-primary full" type="submit">Subir</button>
   </form>
 </dialog>
 {{end}}
