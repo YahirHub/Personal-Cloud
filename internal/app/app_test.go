@@ -331,14 +331,18 @@ func TestFilesTemplateMarksOfflineStorageClearly(t *testing.T) {
 		t.Fatal(err)
 	}
 	html := out.String()
-	if !strings.Contains(html, `file-root-card is-offline`) || !strings.Contains(html, `No disponible · catálogo local`) {
-		t.Fatal("una unidad desconectada debe mostrarse gris y marcada como no disponible")
+	if strings.Contains(html, `file-root-card is-offline`) || strings.Contains(html, `data-unit-actions=`) {
+		t.Fatal("Mi unidad ya no debe exponer unidades físicas desconectadas como contenido")
+	}
+	if !strings.Contains(html, `No hay contenido disponible en Mi unidad`) {
+		t.Fatal("una raíz sin unidades disponibles debe explicar que no hay contenido accesible")
 	}
 
 	itemData := pageData{
 		Title: "Archivos", CurrentPath: "/archivos", User: &user, CSRFToken: "csrf",
 		ExplorerPath: "/USB", ListingMode: "infinito",
 		ExplorerItems: []explorerItem{{ID: "f1", Name: "foto.jpg", Kind: "image", DownloadURL: "/archivo/f1/original", Offline: true}},
+		ExplorerFiles: []explorerItem{{ID: "f1", Name: "foto.jpg", Kind: "image", DownloadURL: "/archivo/f1/original", Offline: true}},
 	}
 	out.Reset()
 	if err := renderer.Render(&out, "files", itemData); err != nil {
@@ -419,13 +423,46 @@ func TestDriveRootUnitActionsAreFunctionalControls(t *testing.T) {
 		t.Fatal(err)
 	}
 	html := out.String()
-	for _, want := range []string{`data-unit-actions="volume-1"`, `data-unit-info`, `data-unit-index`, `data-unit-mount`, `data-unit-dialog`} {
+	for _, want := range []string{`data-unit-info`, `data-unit-index`, `data-unit-mount`, `data-unit-dialog`} {
 		if !strings.Contains(html, want) {
-			t.Fatalf("Mi unidad no expone control funcional %q", want)
+			t.Fatalf("el shell debe conservar el control funcional de unidades %q", want)
 		}
+	}
+	if strings.Contains(html, `data-unit-actions="volume-1"`) {
+		t.Fatal("Mi unidad no debe volver a representar la unidad física como una carpeta del usuario")
 	}
 	if strings.Contains(html, `<span class="drive-card-more"`) {
 		t.Fatal("Mi unidad no debe volver a renderizar tres puntos decorativos")
+	}
+}
+
+func TestDriveRootRendersFoldersBeforeFiles(t *testing.T) {
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := store.User{Username: "admin", Role: "admin"}
+	folder := explorerItem{Name: "Tareas", Kind: "folder", IsDir: true, URL: "/archivos/ver/Clase-A/Tareas", StorageName: "Clase A"}
+	file := explorerItem{ID: "f1", Name: "reporte.pdf", Kind: "document", DownloadURL: "/archivo/f1/original", IconKey: "pdf", IconLabel: "PDF"}
+	data := pageData{
+		Title: "Mi unidad", CurrentPath: "/archivos", User: &user, CSRFToken: "csrf",
+		ExplorerPath: "/", ListingMode: "infinito", ExplorerItems: []explorerItem{folder, file},
+		ExplorerFolders: []explorerItem{folder}, ExplorerFiles: []explorerItem{file},
+	}
+	var out bytes.Buffer
+	if err := renderer.Render(&out, "files", data); err != nil {
+		t.Fatal(err)
+	}
+	html := out.String()
+	folderPos := strings.Index(html, `class="drive-content-label">Carpetas`)
+	filePos := strings.Index(html, `class="drive-content-label">Archivos`)
+	if folderPos < 0 || filePos < 0 || folderPos >= filePos {
+		t.Fatalf("Mi unidad debe renderizar carpetas antes de archivos: folder=%d file=%d", folderPos, filePos)
+	}
+	for _, want := range []string{`data-file-filter-form`, `/static/icons/pdf.svg`, `data-bulk-star`} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("Mi unidad no contiene %q", want)
+		}
 	}
 }
 

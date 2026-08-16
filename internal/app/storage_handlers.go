@@ -30,20 +30,20 @@ func (a *App) dashboardGet(w http.ResponseWriter, r *http.Request) {
 	views, _ := a.storageManager.Views(r.Context())
 	stats := a.catalog.Stats()
 	var online int
-	registered := make([]storagepkg.View, 0, len(views))
+	available := make([]storagepkg.View, 0, len(views))
 	viewByID := make(map[string]storagepkg.View, len(views))
 	for _, view := range views {
 		if !view.Registered {
 			continue
 		}
-		registered = append(registered, view)
 		viewByID[view.ID] = view
 		if view.Online {
 			online++
+			available = append(available, view)
 		}
 	}
-	sort.SliceStable(registered, func(i, j int) bool {
-		return strings.ToLower(registered[i].VirtualRoot) < strings.ToLower(registered[j].VirtualRoot)
+	sort.SliceStable(available, func(i, j int) bool {
+		return strings.ToLower(available[i].VirtualRoot) < strings.ToLower(available[j].VirtualRoot)
 	})
 
 	files := a.catalog.AllFiles()
@@ -54,14 +54,14 @@ func (a *App) dashboardGet(w http.ResponseWriter, r *http.Request) {
 		return files[i].ModTime.After(files[j].ModTime)
 	})
 
-	homeFolders := make([]explorerRoot, 0, minInt(len(registered), 4))
+	homeFolders := make([]explorerRoot, 0, minInt(len(available), 4))
 	counts := make(map[string]int)
 	bytesByStorage := make(map[string]int64)
 	for _, file := range files {
 		counts[file.StorageID]++
 		bytesByStorage[file.StorageID] += file.Size
 	}
-	for _, view := range registered {
+	for _, view := range available {
 		if len(homeFolders) >= 4 {
 			break
 		}
@@ -88,7 +88,7 @@ func (a *App) dashboardGet(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		view, ok := viewByID[file.StorageID]
-		if !ok {
+		if !ok || !view.Online {
 			continue
 		}
 		item := homeFileItem{
@@ -99,9 +99,10 @@ func (a *App) dashboardGet(w http.ResponseWriter, r *http.Request) {
 			ModTime:     file.ModTime,
 			VirtualRoot: file.VirtualRoot,
 			OpenURL:     "/archivo/" + file.ID + "/original",
-			Offline:     !view.Online,
+			Offline:     false,
 			Health:      file.Health,
 		}
+		decorateHomeFile(&item)
 		if file.Thumbnail {
 			item.ThumbnailURL = catalogCacheURL(file, "miniatura")
 		}
@@ -175,9 +176,11 @@ func (a *App) galleryGet(w http.ResponseWriter, r *http.Request) {
 	if hasMore {
 		files = files[:pageSize]
 	}
+	stars, _ := a.store.StarredFileIDs(r.Context(), user.ID)
 	media := make([]mediaPageItem, 0, len(files))
 	for _, file := range files {
-		media = append(media, a.mediaItem(file))
+		_, starred := stars[file.ID]
+		media = append(media, a.mediaItem(file, starred))
 	}
 	total := a.catalog.MediaCountQuery(query)
 	filters := 0
@@ -201,8 +204,8 @@ func (a *App) galleryGet(w http.ResponseWriter, r *http.Request) {
 	a.render(w, http.StatusOK, "photos", data)
 }
 
-func (a *App) mediaItem(file catalog.File) mediaPageItem {
-	item := mediaPageItem{File: file, OriginalURL: "/archivo/" + file.ID + "/original"}
+func (a *App) mediaItem(file catalog.File, starred bool) mediaPageItem {
+	item := mediaPageItem{File: file, OriginalURL: "/archivo/" + file.ID + "/original", Starred: starred}
 	if file.Thumbnail {
 		item.ThumbnailURL = catalogCacheURL(file, "miniatura")
 	}
@@ -225,9 +228,15 @@ func (a *App) galleryAPI(w http.ResponseWriter, r *http.Request) {
 	if hasMore {
 		files = files[:limit]
 	}
+	user := userFromContext(r.Context())
+	stars := map[string]struct{}{}
+	if user != nil {
+		stars, _ = a.store.StarredFileIDs(r.Context(), user.ID)
+	}
 	items := make([]mediaPageItem, 0, len(files))
 	for _, file := range files {
-		items = append(items, a.mediaItem(file))
+		_, starred := stars[file.ID]
+		items = append(items, a.mediaItem(file, starred))
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")

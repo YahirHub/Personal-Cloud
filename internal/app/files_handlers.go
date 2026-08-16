@@ -155,6 +155,7 @@ func (a *App) fileCollectionGet(w http.ResponseWriter, r *http.Request, collecti
 			DownloadURL: "/archivo/" + file.ID + "/original", Offline: !view.Online,
 			StorageName: view.Name, VirtualRoot: file.VirtualRoot, Location: location, Health: file.Health, Starred: starred,
 		}
+		decorateExplorerFile(&item)
 		if file.Thumbnail {
 			item.ThumbnailURL = catalogCacheURL(file, "miniatura")
 		}
@@ -202,6 +203,7 @@ func (a *App) filesGet(w http.ResponseWriter, r *http.Request) {
 			byID[view.ID] = view
 		}
 	}
+	stars, _ := a.store.StarredFileIDs(r.Context(), user.ID)
 
 	data := a.csrfData(w, r, pageData{
 		Title:            "Mi unidad",
@@ -254,6 +256,8 @@ func (a *App) filesGet(w http.ResponseWriter, r *http.Request) {
 				Location:    location,
 				Health:      file.Health,
 			}
+			_, item.Starred = stars[file.ID]
+			decorateExplorerFile(&item)
 			if file.Thumbnail {
 				item.ThumbnailURL = catalogCacheURL(file, "miniatura")
 			}
@@ -278,6 +282,9 @@ func (a *App) filesGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if current == "/" {
+		// Mi unidad es un namespace virtual: en vez de exponer las unidades físicas
+		// como tarjetas, combina el primer nivel de las unidades disponibles. Así
+		// la experiencia coincide con Drive: carpetas arriba y archivos debajo.
 		files := a.catalog.AllFiles()
 		counts := make(map[string]int)
 		bytesByStorage := make(map[string]int64)
@@ -304,8 +311,27 @@ func (a *App) filesGet(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 		sort.SliceStable(roots, func(i, j int) bool { return strings.ToLower(roots[i].Name) < strings.ToLower(roots[j].Name) })
-		data.ExplorerRoots = roots
+		data.ExplorerRoots = roots // Se conserva sólo para distinguir "sin unidades" de "sin contenido disponible".
 		data.ExplorerCanWrite = hasAutoUploadTarget(views)
+
+		allItems := a.virtualRootItems(views)
+		applyExplorerStars(allItems, stars)
+		allItems = applyExplorerFilter(allItems, filter, time.Now().UTC())
+		const pageSize = 100
+		page := parsePositiveInt(r.URL.Query().Get("pagina"), 1)
+		data.ListingPage, data.ListingPrev, data.ListingNext = page, maxInt(page-1, 1), page+1
+		data.ListingHasPrev = page > 1
+		data.ListingInfiniteURL = fileListingURL(r, "infinito", 0)
+		data.ListingPagesURL = fileListingURL(r, "paginas", 1)
+		data.ListingPrevURL = fileListingURL(r, "paginas", data.ListingPrev)
+		data.ListingNextURL = fileListingURL(r, "paginas", data.ListingNext)
+		if mode == "paginas" {
+			data.ExplorerItems, data.ListingHasNext = pageSlice(allItems, page, pageSize)
+		} else {
+			data.ExplorerItems, data.ExplorerHasMore = offsetSlice(allItems, 0, pageSize)
+			data.ExplorerNext = len(data.ExplorerItems)
+		}
+		data.ExplorerFolders, data.ExplorerFiles = splitExplorerItems(data.ExplorerItems)
 		a.render(w, http.StatusOK, "files", data)
 		return
 	}
@@ -324,6 +350,7 @@ func (a *App) filesGet(w http.ResponseWriter, r *http.Request) {
 	}
 	data.ExplorerCanWrite = view.Online && !cfg.ReadOnly
 	allItems := browseCatalog(a.catalog.FilesByStorage(cfg.ID), relative, view)
+	applyExplorerStars(allItems, stars)
 	allItems = applyExplorerFilter(allItems, filter, time.Now().UTC())
 	const pageSize = 100
 	page := parsePositiveInt(r.URL.Query().Get("pagina"), 1)
@@ -339,13 +366,33 @@ func (a *App) filesGet(w http.ResponseWriter, r *http.Request) {
 		data.ExplorerItems, data.ExplorerHasMore = offsetSlice(allItems, 0, pageSize)
 		data.ExplorerNext = len(data.ExplorerItems)
 	}
+	data.ExplorerFolders, data.ExplorerFiles = splitExplorerItems(data.ExplorerItems)
 	a.render(w, http.StatusOK, "files", data)
 }
 
 func (a *App) filesListAPI(w http.ResponseWriter, r *http.Request) {
 	current, err := normalizeExplorerPath(r.URL.Query().Get("path"))
-	if err != nil || current == "/" {
+	if err != nil {
 		http.Error(w, "ruta inválida", http.StatusBadRequest)
+		return
+	}
+	views, _ := a.storageManager.Views(r.Context())
+	if current == "/" {
+		items := a.virtualRootItems(views)
+		if user := userFromContext(r.Context()); user != nil {
+			stars, _ := a.store.StarredFileIDs(r.Context(), user.ID)
+			applyExplorerStars(items, stars)
+		}
+		items = applyExplorerFilter(items, explorerFilterFromRequest(r), time.Now().UTC())
+		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		if limit <= 0 || limit > 150 {
+			limit = 100
+		}
+		page, more := offsetSlice(items, offset, limit)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(map[string]any{"items": page, "next": offset + len(page), "has_more": more})
 		return
 	}
 	root, relative := splitExplorerPath(current)
@@ -354,7 +401,6 @@ func (a *App) filesListAPI(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	views, _ := a.storageManager.Views(r.Context())
 	view := storagepkg.View{ID: cfg.ID, Name: cfg.Name, VirtualRoot: cfg.VirtualRoot, Category: cfg.Category, ReadOnly: cfg.ReadOnly, Registered: true, Online: false, Status: "desconectada"}
 	for _, candidate := range views {
 		if candidate.ID == cfg.ID {
@@ -363,6 +409,10 @@ func (a *App) filesListAPI(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	items := browseCatalog(a.catalog.FilesByStorage(cfg.ID), relative, view)
+	if user := userFromContext(r.Context()); user != nil {
+		stars, _ := a.store.StarredFileIDs(r.Context(), user.ID)
+		applyExplorerStars(items, stars)
+	}
 	items = applyExplorerFilter(items, explorerFilterFromRequest(r), time.Now().UTC())
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
@@ -593,7 +643,7 @@ func browseCatalog(files []catalog.File, relative string, view storagepkg.View) 
 			}
 			continue
 		}
-		result = append(result, explorerItem{
+		item := explorerItem{
 			ID:          file.ID,
 			Name:        file.Name,
 			Kind:        file.Kind,
@@ -610,7 +660,9 @@ func browseCatalog(files []catalog.File, relative string, view storagepkg.View) 
 			StorageName: view.Name,
 			VirtualRoot: file.VirtualRoot,
 			Health:      file.Health,
-		})
+		}
+		decorateExplorerFile(&item)
+		result = append(result, item)
 	}
 	for _, directory := range directories {
 		result = append(result, directory)
@@ -622,6 +674,39 @@ func browseCatalog(files []catalog.File, relative string, view storagepkg.View) 
 		return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name)
 	})
 	return result
+}
+
+func (a *App) virtualRootItems(views []storagepkg.View) []explorerItem {
+	items := make([]explorerItem, 0)
+	for _, view := range views {
+		if !view.Registered || !view.Online {
+			continue
+		}
+		items = append(items, browseCatalog(a.catalog.FilesByStorage(view.ID), "", view)...)
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].IsDir != items[j].IsDir {
+			return items[i].IsDir
+		}
+		left, right := strings.ToLower(items[i].Name), strings.ToLower(items[j].Name)
+		if left == right {
+			return strings.ToLower(items[i].StorageName) < strings.ToLower(items[j].StorageName)
+		}
+		return left < right
+	})
+	return items
+}
+
+func applyExplorerStars(items []explorerItem, stars map[string]struct{}) {
+	if len(stars) == 0 {
+		return
+	}
+	for i := range items {
+		if items[i].IsDir || items[i].ID == "" {
+			continue
+		}
+		_, items[i].Starred = stars[items[i].ID]
+	}
 }
 
 func normalizeExplorerPath(value string) (string, error) {

@@ -36,6 +36,8 @@ type renderData struct {
 	StorageError           string
 	Media                  []any
 	ExplorerItems          []any
+	ExplorerFolders        []any
+	ExplorerFiles          []any
 	ExplorerRoots          []any
 	Breadcrumbs            []any
 	ExplorerPath           string

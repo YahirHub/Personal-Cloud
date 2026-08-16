@@ -7,7 +7,22 @@ import (
 
 // SetFileStarred añade o retira un archivo de Destacados para un usuario.
 func (s *Store) SetFileStarred(ctx context.Context, userID, fileID string, starred bool) error {
-	if userID == "" || fileID == "" {
+	return s.SetFilesStarred(ctx, userID, []string{fileID}, starred)
+}
+
+// SetFilesStarred actualiza Destacados en una única mutación persistente para que
+// la selección múltiple no provoque una escritura de metadatos por archivo.
+func (s *Store) SetFilesStarred(ctx context.Context, userID string, fileIDs []string, starred bool) error {
+	if userID == "" || len(fileIDs) == 0 {
+		return ErrNotFound
+	}
+	ids := make(map[string]struct{}, len(fileIDs))
+	for _, fileID := range fileIDs {
+		if fileID != "" {
+			ids[fileID] = struct{}{}
+		}
+	}
+	if len(ids) == 0 {
 		return ErrNotFound
 	}
 	return s.mutate(ctx, func(next *persistedState) error {
@@ -21,21 +36,29 @@ func (s *Store) SetFileStarred(ctx context.Context, userID, fileID string, starr
 		if !userExists {
 			return ErrNotFound
 		}
+
+		already := make(map[string]struct{}, len(ids))
 		filtered := next.Stars[:0]
-		found := false
 		for _, item := range next.Stars {
-			if item.UserID == userID && item.FileID == fileID {
-				found = true
-				if starred {
-					filtered = append(filtered, item)
+			if item.UserID == userID {
+				if _, selected := ids[item.FileID]; selected {
+					already[item.FileID] = struct{}{}
+					if starred {
+						filtered = append(filtered, item)
+					}
+					continue
 				}
-				continue
 			}
 			filtered = append(filtered, item)
 		}
 		next.Stars = filtered
-		if starred && !found {
-			next.Stars = append(next.Stars, FileStar{UserID: userID, FileID: fileID, CreatedAt: time.Now().UTC()})
+		if starred {
+			now := time.Now().UTC()
+			for fileID := range ids {
+				if _, exists := already[fileID]; !exists {
+					next.Stars = append(next.Stars, FileStar{UserID: userID, FileID: fileID, CreatedAt: now})
+				}
+			}
 		}
 		return nil
 	})

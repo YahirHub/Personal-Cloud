@@ -20,6 +20,7 @@ type mediaPageItem struct {
 	ThumbnailURL string `json:"thumbnail_url"`
 	PreviewURL   string `json:"preview_url"`
 	OriginalURL  string `json:"original_url"`
+	Starred      bool   `json:"starred"`
 }
 
 type explorerItem struct {
@@ -38,6 +39,8 @@ type explorerItem struct {
 	VirtualRoot  string    `json:"virtual_root,omitempty"`
 	Health       string    `json:"health,omitempty"`
 	Starred      bool      `json:"starred,omitempty"`
+	IconKey      string    `json:"icon_key,omitempty"`
+	IconLabel    string    `json:"icon_label,omitempty"`
 }
 
 type breadcrumbItem struct {
@@ -94,6 +97,8 @@ type homeFileItem struct {
 	OpenURL      string
 	Offline      bool
 	Health       string
+	IconKey      string
+	IconLabel    string
 }
 
 func minInt(a, b int) int {
@@ -101,4 +106,31 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func decorateExplorerFile(item *explorerItem) {
+	if item == nil || item.IsDir {
+		return
+	}
+	item.IconKey, item.IconLabel = storage.FileIcon(item.Name, item.Kind)
+}
+
+func decorateHomeFile(item *homeFileItem) {
+	if item == nil {
+		return
+	}
+	item.IconKey, item.IconLabel = storage.FileIcon(item.Name, item.Kind)
+}
+
+func splitExplorerItems(items []explorerItem) (folders, files []explorerItem) {
+	folders = make([]explorerItem, 0)
+	files = make([]explorerItem, 0)
+	for _, item := range items {
+		if item.IsDir {
+			folders = append(folders, item)
+		} else {
+			files = append(files, item)
+		}
+	}
+	return folders, files
 }

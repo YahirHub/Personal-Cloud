@@ -5,10 +5,10 @@
       {{range $i, $crumb := .Breadcrumbs}}{{if $i}}<span class="drive-breadcrumb-separator">{{template "icon-chevron-right" $}}</span>{{end}}<a href="{{$crumb.URL}}">{{$crumb.Name}}</a>{{end}}
     </nav>
     <div class="drive-files-actions">
-      {{if and (ne .ExplorerPath "/") (not .SearchMode)}}{{template "listing-controls" .}}{{end}}
-      {{if or (or (ne .ExplorerPath "/") .SearchMode) .FileCollection}}<button class="icon-button" type="button" data-open-selection-menu aria-label="Opciones de selección" title="Opciones de selección">{{template "icon-more" .}}</button>{{end}}
+      {{if and (not .SearchMode) (not .FileCollection)}}{{template "listing-controls" .}}{{end}}
+      {{if .ExplorerItems}}<button class="icon-button" type="button" data-open-selection-menu aria-label="Opciones de selección" title="Opciones de selección">{{template "icon-more" .}}</button>{{end}}
       {{if and .ExplorerCanWrite (not .FileCollection)}}<button class="button button-secondary drive-upload-inline" type="button" data-open-upload>{{template "icon-upload" .}} Subir aquí</button>{{end}}
-      {{if or (or (ne .ExplorerPath "/") .SearchMode) .FileCollection}}
+      {{if .ExplorerItems}}
       <div class="drive-view-toggle" role="group" aria-label="Vista de archivos">
         <button class="drive-view-button" type="button" data-file-view="list" aria-label="Vista de lista" title="Lista">{{template "icon-list" .}}</button>
         <button class="drive-view-button active" type="button" data-file-view="grid" aria-label="Vista de cuadrícula" title="Cuadrícula">{{template "icon-grid" .}}</button>
@@ -20,7 +20,7 @@
 
   {{if .Info}}<div class="alert alert-success">{{.Info}}</div>{{end}}{{if .Error}}<div class="alert alert-error">{{.Error}}</div>{{end}}{{if .StorageError}}<div class="alert">La detección del sistema reportó: {{.StorageError}}</div>{{end}}
 
-  {{if or (or (ne .ExplorerPath "/") .SearchMode) .FileCollection}}
+  {{if or .ExplorerItems .SearchMode .FileCollection}}
   <form class="drive-filter-row" method="get" action="{{.FileFilterAction}}" data-file-filter-form>
     {{if .SearchMode}}<input type="hidden" name="q" value="{{.SearchQuery}}">{{end}}
     <label class="drive-filter-select">
@@ -73,15 +73,17 @@
       <div class="drive-empty-inline"><span class="drive-empty-icon">{{template "icon-search" .}}</span><div><strong>No encontramos archivos</strong><small>Prueba con otro nombre o una parte de la ruta.</small></div></div>
     {{end}}
   {{else if eq .ExplorerPath "/"}}
-    {{if .ExplorerRoots}}
-      <div class="drive-content-label">Carpetas</div>
-      <div class="file-root-grid">{{range .ExplorerRoots}}<article class="file-root-card{{if .Offline}} is-offline{{end}}" data-offline="{{.Offline}}"><a class="file-root-link" href="{{.URL}}"{{if .Offline}} title="Unidad no disponible; puedes seguir explorando el catálogo local"{{end}}><span class="file-root-icon">{{template "icon-folder" $}}</span><span class="file-root-copy"><strong>{{.Name}}</strong><small>{{if .Offline}}No disponible · catálogo local{{else}}{{categoryLabel .Category}} · {{.FileCount}} archivos{{end}}</small></span></a><button class="drive-more-button drive-unit-more" type="button" data-unit-actions="{{.ID}}" data-unit-url="{{.URL}}" aria-label="Más acciones para {{.Name}}" title="Más acciones">{{template "icon-more" $}}</button></article>{{end}}</div>
+    {{if .ExplorerItems}}
+      {{template "drive-browser-content" .}}
+      {{if eq .ListingMode "infinito"}}<div class="infinite-sentinel" data-files-sentinel>{{if .ExplorerHasMore}}Cargando más al desplazarte…{{else}}Fin de Mi unidad{{end}}</div>{{else}}<nav class="pagination-row" aria-label="Paginación">{{if .ListingHasPrev}}<a class="button button-secondary" href="{{.ListingPrevURL}}">Anterior</a>{{end}}<span class="page-number">Página {{.ListingPage}}</span>{{if .ListingHasNext}}<a class="button button-secondary" href="{{.ListingNextURL}}">Siguiente</a>{{end}}</nav>{{end}}
+    {{else if .ExplorerRoots}}
+      <div class="empty-state compact-empty"><div class="empty-icon">{{template "icon-folder" .}}</div><h2>No hay contenido disponible en Mi unidad</h2><p>Las unidades registradas están vacías, sin indexar o desconectadas. Cuando estén disponibles, sus carpetas y archivos aparecerán aquí.</p><p><a class="button button-secondary" href="/almacenamiento">Revisar almacenamiento</a></p></div>
     {{else}}
       <div class="empty-state"><div class="empty-icon">{{template "icon-folder" .}}</div><h2>No hay unidades registradas</h2><p>Registra una unidad desde Almacenamiento. La primera indexación comenzará automáticamente.</p><p><a class="button button-primary" href="/almacenamiento">Ir a Almacenamiento</a></p></div>
     {{end}}
   {{else}}
     {{if .ExplorerItems}}
-      {{template "drive-file-list" .}}
+      {{template "drive-browser-content" .}}
       {{if eq .ListingMode "infinito"}}<div class="infinite-sentinel" data-files-sentinel>{{if .ExplorerHasMore}}Cargando más al desplazarte…{{else}}Fin de la carpeta{{end}}</div>{{else}}<nav class="pagination-row" aria-label="Paginación">{{if .ListingHasPrev}}<a class="button button-secondary" href="{{if .ListingPrevURL}}{{.ListingPrevURL}}{{else}}{{.ListingBaseURL}}?modo=paginas&pagina={{.ListingPrev}}{{end}}">Anterior</a>{{end}}<span class="page-number">Página {{.ListingPage}}</span>{{if .ListingHasNext}}<a class="button button-secondary" href="{{if .ListingNextURL}}{{.ListingNextURL}}{{else}}{{.ListingBaseURL}}?modo=paginas&pagina={{.ListingNext}}{{end}}">Siguiente</a>{{end}}</nav>{{end}}
     {{else}}
       <div class="empty-state compact-empty"><div class="empty-icon">{{template "icon-folder" .}}</div><h2>Esta carpeta está vacía</h2><p>Si acabas de modificar la unidad, ejecuta una indexación desde Almacenamiento.</p></div>
@@ -119,24 +121,39 @@
 {{end}}
 {{end}}
 
+{{define "drive-file-item"}}
+<a class="file-row{{if .Offline}} is-offline{{end}}{{if eq .Health "damaged"}} is-damaged{{end}}" href="{{.DownloadURL}}" role="listitem" data-selectable-file="{{.ID}}" data-download-file-id="{{.ID}}" data-offline="{{.Offline}}" data-starred="{{.Starred}}">
+  <span class="selection-check file-selection-check" aria-hidden="true">{{template "icon-check" .}}</span>
+  <span class="file-card-preview">{{if .ThumbnailURL}}<img src="{{.ThumbnailURL}}" alt="" loading="lazy">{{else}}<span class="drive-preview-placeholder drive-kind-{{.Kind}}">{{template "file-type-icon" .}}</span>{{end}}</span>
+  <span class="file-kind drive-kind-{{.Kind}}">{{template "file-type-icon" .}}</span>
+  <span class="file-main"><strong>{{.Name}}</strong><small>{{if .Location}}{{.Location}} · {{end}}{{formatTime .ModTime}}{{if .Offline}} · original no disponible hasta reconectar{{end}}</small></span><span class="file-size">{{formatBytes .Size}}</span>
+  <button class="drive-more-button file-row-more" type="button" data-file-actions="{{.ID}}" aria-label="Más acciones para {{.Name}}">{{template "icon-more" .}}</button>
+</a>
+{{end}}
+
 {{define "drive-file-list"}}
 <div class="file-list drive-file-list is-grid" role="list" data-files-list data-path="{{.ExplorerPath}}" data-next="{{.ExplorerNext}}" data-has-more="{{.ExplorerHasMore}}" data-mode="{{.ListingMode}}">
-  {{range .ExplorerItems}}
-    {{if .IsDir}}
-    <a class="file-row{{if .Offline}} is-offline{{end}}" href="{{.URL}}" role="listitem" data-offline="{{.Offline}}">
-      <span class="file-card-preview folder-preview">{{template "icon-folder" $}}</span>
-      <span class="file-kind folder">{{template "icon-folder" $}}</span>
-      <span class="file-main"><strong>{{.Name}}</strong><small>Carpeta{{if .Offline}} · unidad no disponible{{end}}</small></span><span class="file-size">—</span>
-    </a>
-    {{else}}
-    <a class="file-row{{if .Offline}} is-offline{{end}}{{if eq .Health "damaged"}} is-damaged{{end}}" href="{{.DownloadURL}}" role="listitem" data-selectable-file="{{.ID}}" data-download-file-id="{{.ID}}" data-offline="{{.Offline}}" data-starred="{{.Starred}}">
-      <span class="selection-check file-selection-check" aria-hidden="true">{{template "icon-check" $}}</span>
-      <span class="file-card-preview">{{if .ThumbnailURL}}<img src="{{.ThumbnailURL}}" alt="" loading="lazy">{{else}}<span class="drive-preview-placeholder drive-kind-{{.Kind}}">{{if eq .Kind "image"}}{{template "icon-image" $}}{{else if eq .Kind "video"}}{{template "icon-video" $}}{{else if eq .Kind "audio"}}{{template "icon-audio" $}}{{else}}{{template "icon-files" $}}{{end}}</span>{{end}}</span>
-      <span class="file-kind drive-kind-{{.Kind}}">{{if eq .Kind "image"}}{{template "icon-image" $}}{{else if eq .Kind "video"}}{{template "icon-video" $}}{{else if eq .Kind "audio"}}{{template "icon-audio" $}}{{else}}{{template "icon-files" $}}{{end}}</span>
-      <span class="file-main"><strong>{{.Name}}</strong><small>{{if .Location}}{{.Location}} · {{end}}{{formatTime .ModTime}}{{if .Offline}} · original no disponible hasta reconectar{{end}}</small></span><span class="file-size">{{formatBytes .Size}}</span>
-      <button class="drive-more-button file-row-more" type="button" data-file-actions="{{.ID}}" aria-label="Más acciones para {{.Name}}">{{template "icon-more" $}}</button>
-    </a>
-    {{end}}
-  {{end}}
+  {{range .ExplorerItems}}{{if not .IsDir}}{{template "drive-file-item" .}}{{end}}{{end}}
+</div>
+{{end}}
+
+{{define "drive-browser-content"}}
+<div class="drive-browser-sections" data-drive-browser-sections>
+  <section class="drive-browser-section drive-folder-section" data-folder-section{{if not .ExplorerFolders}} hidden{{end}}>
+    <div class="drive-content-label">Carpetas</div>
+    <div class="drive-folder-grid" data-folder-listing>
+      {{range .ExplorerFolders}}
+      <a class="drive-folder-card{{if .Offline}} is-offline{{end}}" href="{{.URL}}" data-offline="{{.Offline}}">
+        <span class="drive-folder-card-icon">{{template "icon-folder" .}}</span><strong>{{.Name}}</strong>
+      </a>
+      {{end}}
+    </div>
+  </section>
+  <section class="drive-browser-section drive-files-section" data-file-section{{if not .ExplorerFiles}} hidden{{end}}>
+    <div class="drive-content-label">Archivos</div>
+    <div class="file-list drive-file-list is-grid" role="list" data-files-list data-path="{{.ExplorerPath}}" data-next="{{.ExplorerNext}}" data-has-more="{{.ExplorerHasMore}}" data-mode="{{.ListingMode}}">
+      {{range .ExplorerFiles}}{{template "drive-file-item" .}}{{end}}
+    </div>
+  </section>
 </div>
 {{end}}

@@ -87,6 +87,8 @@ type pageData struct {
 	ListingHasPrev         bool
 	ListingHasNext         bool
 	ExplorerItems          []explorerItem
+	ExplorerFolders        []explorerItem
+	ExplorerFiles          []explorerItem
 	ExplorerRoots          []explorerRoot
 	Breadcrumbs            []breadcrumbItem
 	ExplorerPath           string
@@ -286,6 +288,7 @@ func (a *App) routes() {
 	a.mux.Handle("GET /api/carpetas", a.requireAuth(http.HandlerFunc(a.moveFoldersGet)))
 	a.mux.Handle("POST /api/carpetas/crear", a.requireAuth(http.HandlerFunc(a.moveFolderCreatePost)))
 	a.mux.Handle("POST /api/elementos/mover", a.requireAuth(http.HandlerFunc(a.elementsMovePost)))
+	a.mux.Handle("POST /api/elementos/destacar", a.requireAuth(http.HandlerFunc(a.elementsStarPost)))
 	a.mux.Handle("POST /api/elementos/eliminar", a.requireAuth(http.HandlerFunc(a.elementsDeletePost)))
 	a.mux.Handle("POST /api/elementos/descargar", a.requireAuth(http.HandlerFunc(a.batchDownloadTicketPost)))
 	a.mux.Handle("GET /descarga-lote/{token}", a.requireAuth(http.HandlerFunc(a.batchDownloadGet)))

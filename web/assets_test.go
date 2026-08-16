@@ -28,6 +28,12 @@ func TestEmbeddedUIHasNoRemoteAssets(t *testing.T) {
 			return err
 		}
 		content := strings.ToLower(string(data))
+		// xmlns declara el namespace XML estándar de SVG; no provoca ninguna
+		// petición de red y es necesario para servir los iconos como imágenes.
+		if strings.HasSuffix(strings.ToLower(path), ".svg") {
+			content = strings.ReplaceAll(content, `xmlns="http://www.w3.org/2000/svg"`, "")
+			content = strings.ReplaceAll(content, `xmlns='http://www.w3.org/2000/svg'`, "")
+		}
 		for _, pattern := range patterns {
 			if strings.Contains(content, pattern) {
 				t.Errorf("asset embebido %s contiene referencia remota %q", path, pattern)
@@ -272,6 +278,18 @@ func TestDriveViewsAndGlobalNewAreFunctional(t *testing.T) {
 	} {
 		if !strings.Contains(js, expected) {
 			t.Fatalf("la experiencia tipo Drive debe conservar controles reales; falta %q", expected)
+		}
+	}
+}
+
+func TestVendoredFileTypeIconsAreEmbedded(t *testing.T) {
+	for _, name := range []string{"android.svg", "pdf.svg", "markdown.svg", "word.svg", "excel.svg", "powerpoint.svg"} {
+		data, err := fs.ReadFile(Assets, "static/icons/"+name)
+		if err != nil {
+			t.Fatalf("icono local %s no embebido: %v", name, err)
+		}
+		if len(data) < 100 {
+			t.Fatalf("icono local %s parece vacío", name)
 		}
 	}
 }

@@ -14,13 +14,13 @@ Implementado:
 - CSRF y rate limit reutilizable.
 - Rate limit de login por IP y usuario.
 - URLs amigables y frontend con layout/componentes reutilizables.
-- Interfaz oscura inspirada estrechamente en Google Drive: topbar, búsqueda, navegación lateral, botón Nuevo, página principal con carpetas/archivos sugeridos en cuadrícula o lista y Mi unidad con cuadrícula/lista, manteniendo identidad propia y assets locales.
+- Interfaz oscura inspirada estrechamente en Google Drive: topbar, búsqueda, navegación lateral, botón Nuevo, página principal con carpetas/archivos sugeridos en cuadrícula o lista y Mi unidad con cuadrícula/lista, manteniendo identidad propia y assets locales. La raíz de Mi unidad combina el primer nivel de las unidades disponibles y siempre presenta carpetas antes que archivos, sin exponer los discos físicos como carpetas artificiales.
 - Los menús `⋯` de las unidades son reales: permiten abrir, consultar propiedades/estado/capacidad, actualizar el catálogo, montar bajo demanda y saltar a la administración de almacenamiento.
 - Los menús de archivo incluyen abrir, descargar, información, agregar/quitar de Destacados, renombrar, mover y eliminar; la información sigue disponible desde el catálogo aunque el original esté temporalmente offline.
-- `Recientes` y `Destacados` son vistas reales. Los destacados se guardan por usuario y siguen al archivo si se renombra o mueve desde el panel.
+- `Recientes` y `Destacados` son vistas reales. Los destacados se guardan por usuario y siguen al archivo si se renombra o mueve desde el panel; también pueden alternarse desde el visor multimedia y desde una selección múltiple.
 - El botón `Nuevo` abre un menú estilo Drive con **Nueva carpeta** y **Subir archivo**; Mi unidad también admite drag & drop directo sobre la carpeta actual.
 - Mi unidad, búsqueda, Recientes y Destacados tienen filtros funcionales por tipo y fecha de modificación; las vistas globales también pueden filtrar por unidad/fuente. Los filtros se conservan al alternar paginación/scroll continuo.
-- Búsqueda global local por nombre/ruta desde la barra superior, sin montar unidades para consultar el catálogo.
+- Búsqueda global local por nombre/ruta desde la barra superior, sin montar unidades para consultar el catálogo. Inicio sólo sugiere contenido de unidades disponibles, evitando tarjetas o archivos de discos físicamente desconectados.
 - Detección de volúmenes Windows y Linux con identidad persistente independiente de letra, nombre o punto de montaje.
 - Reconexión tolerante a cambios de identidad del SO: primero coincide por ID persistente y, cuando éste cambió, usa el identificador de hardware únicamente si la coincidencia es inequívoca; la nueva identidad se persiste automáticamente. Las lecturas hacen una segunda detección breve para cubrir la ventana en que el SO acaba de anunciar un disco reconectado.
 - Windows conserva Volume GUID + serial del filesystem; Linux prioriza UUID y conserva PARTUUID/by-id como respaldo de identidad.
@@ -49,7 +49,7 @@ Implementado:
 - TLS directo opcional o despliegue detrás de proxy HTTPS.
 - Healthcheck `/salud`.
 - Backups diarios de metadatos con retención de siete copias.
-- Frontend y todos sus iconos/JS/CSS embebidos funcionan offline, sin CDN.
+- Frontend y todos sus iconos/JS/CSS embebidos funcionan offline, sin CDN en tiempo de ejecución. APK/AAB, PDF, Markdown, Word, Excel, PowerPoint y otros tipos comunes usan iconos SVG específicos vendorizados localmente, con fallback por extensión para formatos menos comunes.
 - Elevación automática: UAC en Windows y `sudo` interactivo en Linux cuando el proceso necesita permisos de volumen y no los tiene.
 - Build Linux y Windows/amd64 sin CGO y sin módulos Go externos.
 

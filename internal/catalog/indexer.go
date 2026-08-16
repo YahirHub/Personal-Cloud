@@ -675,20 +675,7 @@ func classify(path string) (string, string) {
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
 	}
-	switch ext {
-	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif", ".avif", ".dng", ".cr2", ".nef", ".arw":
-		return "image", mimeType
-	case ".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".mts", ".m2ts":
-		return "video", mimeType
-	case ".mp3", ".flac", ".wav", ".m4a", ".ogg", ".opus", ".aac", ".wma":
-		return "audio", mimeType
-	case ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".md", ".odt", ".ods":
-		return "document", mimeType
-	case ".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz":
-		return "archive", mimeType
-	default:
-		return "other", mimeType
-	}
+	return storage.FileKind(path), mimeType
 }
 func (i *Indexer) setJob(storageID string, update func(*JobStatus)) {
 	i.mu.Lock()

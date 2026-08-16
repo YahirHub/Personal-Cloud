@@ -1,0 +1,10 @@
+{{define "file-type-icon"}}
+<span class="file-type-icon file-type-{{if .IconKey}}{{.IconKey}}{{else}}file{{end}}" aria-hidden="true">
+  {{if or (eq .IconKey "android") (eq .IconKey "pdf") (eq .IconKey "markdown") (eq .IconKey "word") (eq .IconKey "excel") (eq .IconKey "powerpoint") (eq .IconKey "image") (eq .IconKey "audio") (eq .IconKey "video") (eq .IconKey "database") (eq .IconKey "archive") (eq .IconKey "executable") (eq .IconKey "document")}}
+  <img class="file-type-vendored" src="/static/icons/{{.IconKey}}.svg" alt="">
+  {{else}}
+  <svg viewBox="0 0 28 34" focusable="false"><path class="file-type-sheet" d="M5 1.5h11.5L23 8v24.5H5z"/><path class="file-type-corner" d="M16.5 1.5V8H23"/></svg>
+  <span class="file-type-badge">{{if .IconLabel}}{{.IconLabel}}{{else}}FILE{{end}}</span>
+  {{end}}
+</span>
+{{end}}

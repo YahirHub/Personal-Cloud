@@ -250,6 +250,47 @@ func (a *App) elementsDeletePost(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "deleted": deleted})
 }
 
+func (a *App) elementsStarPost(w http.ResponseWriter, r *http.Request) {
+	if !a.parseProtectedForm(w, r) || !a.allowBulkAction(w, r, "star") {
+		return
+	}
+	user := userFromContext(r.Context())
+	if user == nil {
+		writeJSONError(w, errors.New("sesión no válida"), http.StatusUnauthorized)
+		return
+	}
+	ids, err := selectedFileIDs(r)
+	if err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	valid := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := a.catalog.ByID(id); ok {
+			valid = append(valid, id)
+		}
+	}
+	if len(valid) == 0 {
+		writeJSONError(w, errors.New("los archivos seleccionados ya no están en el catálogo"), http.StatusNotFound)
+		return
+	}
+	starred := true
+	if raw := strings.TrimSpace(r.FormValue("starred")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			writeJSONError(w, errors.New("valor starred inválido"), http.StatusBadRequest)
+			return
+		}
+		starred = value
+	}
+	if err := a.store.SetFilesStarred(r.Context(), user.ID, valid, starred); err != nil {
+		writeJSONError(w, err, http.StatusInternalServerError)
+		return
+	}
+	_ = a.store.Audit(r.Context(), user.ID, "files_star", fmt.Sprintf("%t:%d", starred, len(valid)), a.clientIP(r))
+	writeJSON(w, map[string]any{"ok": true, "starred": starred, "updated": len(valid)})
+}
+
 func (a *App) fileStarPost(w http.ResponseWriter, r *http.Request) {
 	if !a.validCSRFValue(r, r.Header.Get("X-CSRF-Token")) {
 		writeJSONError(w, errors.New("la sesión del formulario no es válida"), http.StatusBadRequest)

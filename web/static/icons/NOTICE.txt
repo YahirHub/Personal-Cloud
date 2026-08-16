@@ -1,0 +1,4 @@
+Selected file-type icons are vendored from Material Icon Theme 5.37.0.
+License: MIT. See LICENSE-material-icon-theme.txt in this directory.
+The application serves these SVG files locally and never requires a runtime CDN connection.
+The Excel/spreadsheet presentation uses the package's table.svg asset, stored locally as excel.svg.

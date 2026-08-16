@@ -324,6 +324,47 @@ func TestFileStarsPersistAndFollowMovedCatalogID(t *testing.T) {
 	}
 }
 
+func TestSetFilesStarredUpdatesSelectionInOneMutation(t *testing.T) {
+	ctx := context.Background()
+	storage, err := Open(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, err := storage.CreateFirstAdmin(ctx, "admin-bulk-stars", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{"file-a", "file-b", "file-c"}
+	if err := storage.SetFilesStarred(ctx, admin.ID, ids, true); err != nil {
+		t.Fatal(err)
+	}
+	got, err := storage.StarredFileIDs(ctx, admin.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range ids {
+		if _, ok := got[id]; !ok {
+			t.Fatalf("%s no quedó destacado", id)
+		}
+	}
+	if err := storage.SetFilesStarred(ctx, admin.ID, []string{"file-a", "file-c"}, false); err != nil {
+		t.Fatal(err)
+	}
+	got, err = storage.StarredFileIDs(ctx, admin.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["file-a"]; ok {
+		t.Fatal("file-a debió quitarse de Destacados")
+	}
+	if _, ok := got["file-c"]; ok {
+		t.Fatal("file-c debió quitarse de Destacados")
+	}
+	if _, ok := got["file-b"]; !ok {
+		t.Fatal("file-b debe conservarse destacado")
+	}
+}
+
 func TestMutationsPreserveAppSettings(t *testing.T) {
 	ctx := context.Background()
 	storage, err := Open(filepath.Join(t.TempDir(), "state.json"))

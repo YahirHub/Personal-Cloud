@@ -139,6 +139,28 @@
     }
     return info;
   };
+  const updateStarStateForID = (id, starred) => {
+    if (!id) return;
+    const escaped = CSS.escape(id);
+    $$(`[data-selectable-file="${escaped}"], [data-download-file-id="${escaped}"]`).forEach((node) => {
+      node.dataset.starred = String(Boolean(starred));
+      node.classList.toggle('is-starred', Boolean(starred));
+    });
+    if (downloadTargetInfo?.id === id) downloadTargetInfo.starred = Boolean(starred);
+  };
+  const requestFileStar = async (id, starred) => {
+    const response = await fetch(`/api/archivo/${encodeURIComponent(id)}/destacar`, {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': csrfToken, 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', Accept: 'application/json' },
+      body: new URLSearchParams({ starred: String(Boolean(starred)) }),
+      cache: 'no-store'
+    });
+    const contentType = response.headers.get('content-type') || '';
+    const result = contentType.includes('application/json') ? await response.json() : { error: (await response.text()).trim() };
+    if (!response.ok) throw new Error(result.error || 'No se pudo actualizar Destacados');
+    updateStarStateForID(id, Boolean(result.starred));
+    return result;
+  };
   const hideDownloadMenu = () => {
     if (!downloadMenu) return;
     downloadMenu.hidden = true;
@@ -510,22 +532,14 @@
     if (!id) return;
     try {
       const info = downloadTargetInfo || await loadDownloadTargetInfo();
-      const next = !Boolean(info.starred);
-      const response = await fetch(`/api/archivo/${encodeURIComponent(id)}/destacar`, {
-        method: 'POST',
-        headers: { 'X-CSRF-Token': csrfToken, 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', Accept: 'application/json' },
-        body: new URLSearchParams({ starred: String(next) }),
-        cache: 'no-store'
-      });
-      if (!response.ok) throw new Error((await response.text()).trim() || 'No se pudo actualizar Destacados');
-      const result = await response.json();
+      const result = await requestFileStar(id, !Boolean(info.starred));
       if (downloadTargetInfo) downloadTargetInfo.starred = Boolean(result.starred);
       setStarMenuState(Boolean(result.starred));
       hideDownloadMenu();
       showToast(result.starred ? 'Agregado a Destacados' : 'Quitado de Destacados');
       if (window.location.pathname === '/destacados' && !result.starred) window.setTimeout(() => window.location.reload(), 220);
     } catch (error) {
-      setStarMenuState(false);
+      setStarMenuState(Boolean(downloadTargetInfo?.starred));
       showToast(error.message || 'No se pudo actualizar Destacados');
     }
   });
@@ -582,6 +596,7 @@
   const viewer = $('[data-media-viewer]');
   const viewerShell = $('[data-viewer-shell]', viewer);
   const stage = $('[data-viewer-stage]', viewer);
+  const viewerStarButton = $('[data-viewer-star]', viewer);
   const videoControls = $('[data-video-controls]', viewer);
   const videoPlayButton = $('[data-video-play]', viewer);
   const videoPlayIcon = $('[data-video-play-icon]', viewer);
@@ -618,7 +633,8 @@
       original: item.original_url,
       preview: item.preview_url || '',
       thumbnail: item.thumbnail_url || '',
-      cacheVersion: String(item.cache_version || 0)
+      cacheVersion: String(item.cache_version || 0),
+      starred: String(Boolean(item.starred))
     });
     button.title = `Abrir ${item.name}`;
     if (item.thumbnail_url) {
@@ -1187,6 +1203,17 @@
   window.addEventListener('resize', () => reevaluateAutoQuality());
   document.addEventListener('fullscreenchange', () => reevaluateAutoQuality());
 
+  const setViewerStarState = (starred, loading = false) => {
+    if (!viewerStarButton) return;
+    const value = Boolean(starred);
+    viewerStarButton.dataset.starred = String(value);
+    viewerStarButton.classList.toggle('is-starred', value);
+    viewerStarButton.disabled = loading;
+    const label = value ? 'Quitar de Destacados' : 'Agregar a Destacados';
+    viewerStarButton.setAttribute('aria-label', loading ? 'Actualizando Destacados' : label);
+    viewerStarButton.title = loading ? 'Actualizando…' : label;
+  };
+
   const showMedia = async (index) => {
     const cards = mediaCards();
     if (!cards.length || !viewer || !stage) return;
@@ -1207,6 +1234,7 @@
     if (videoControls) videoControls.hidden = true;
     viewerShell.dataset.activeKind = card.dataset.kind || '';
     $('[data-viewer-title]', viewer).textContent = card.dataset.name || '';
+    setViewerStarState(card.dataset.starred === 'true');
 
     if (card.dataset.kind === 'image') {
       const token = currentMediaID;
@@ -1284,7 +1312,23 @@
     if (delta > 0 && currentIndex === before - 1 && grid?.dataset.hasMore === 'true') await loadMoreGallery();
     await showMedia(currentIndex + delta);
   };
-  $('[data-viewer-close]', viewer)?.addEventListener('click', () => viewer.close());
+  viewerStarButton?.addEventListener('click', async () => {
+    const id = currentMediaID;
+    if (!id) return;
+    const card = mediaCards().find((item) => item.dataset.mediaId === id);
+    const current = card?.dataset.starred === 'true';
+    setViewerStarState(current, true);
+    try {
+      const result = await requestFileStar(id, !current);
+      if (card) card.dataset.starred = String(Boolean(result.starred));
+      setViewerStarState(Boolean(result.starred));
+      showToast(result.starred ? 'Agregado a Destacados' : 'Quitado de Destacados');
+    } catch (error) {
+      setViewerStarState(current);
+      showToast(error.message || 'No se pudo actualizar Destacados');
+    }
+  });
+    $('[data-viewer-close]', viewer)?.addEventListener('click', () => viewer.close());
   $('[data-viewer-prev]', viewer)?.addEventListener('click', () => stepMedia(-1));
   $('[data-viewer-next]', viewer)?.addEventListener('click', () => stepMedia(1));
   fullscreenButton?.addEventListener('click', async () => {
@@ -1325,6 +1369,7 @@
     else if (key === 'arrowright' || key === 'd') { event.preventDefault(); event.stopPropagation(); stepMedia(1); }
     else if (key === 'w') { event.preventDefault(); event.stopPropagation(); setZoom(zoom + .15); }
     else if (key === 's') { event.preventDefault(); event.stopPropagation(); setZoom(zoom - .15); }
+    else if (key === 'f' && viewerStarButton) { event.preventDefault(); event.stopPropagation(); viewerStarButton.click(); }
     else if ((key === ' ' || key === 'spacebar') && activeVideo) { event.preventDefault(); event.stopPropagation(); if (activeVideo.paused) activeVideo.play().catch(() => {}); else activeVideo.pause(); }
     else if (key === 'escape') { event.preventDefault(); viewer.close(); }
   };
@@ -1392,27 +1437,64 @@
   });
 
   const fileList = $('[data-files-list]');
+  const folderListing = $('[data-folder-listing]');
+  const folderSection = $('[data-folder-section]');
+  const fileSection = $('[data-file-section]');
   const fileSentinel = $('[data-files-sentinel]');
   let loadingFiles = false;
+  const localFileIconAssets = new Set(['android', 'pdf', 'markdown', 'word', 'excel', 'powerpoint', 'image', 'audio', 'video', 'database', 'archive', 'executable', 'document']);
+  const makeFileTypeIcon = (item) => {
+    const key = String(item.icon_key || 'file').toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'file';
+    const icon = document.createElement('span');
+    icon.className = `file-type-icon file-type-${key}`;
+    icon.setAttribute('aria-hidden', 'true');
+    if (localFileIconAssets.has(key)) {
+      const image = document.createElement('img');
+      image.className = 'file-type-vendored';
+      image.src = `/static/icons/${key}.svg`;
+      image.alt = '';
+      icon.append(image);
+      return icon;
+    }
+    icon.innerHTML = '<svg viewBox="0 0 28 34" focusable="false"><path class="file-type-sheet" d="M5 1.5h11.5L23 8v24.5H5z"></path><path class="file-type-corner" d="M16.5 1.5V8H23"></path></svg>';
+    const badge = document.createElement('span');
+    badge.className = 'file-type-badge';
+    badge.textContent = item.icon_label || 'FILE';
+    icon.append(badge);
+    return icon;
+  };
+  const makeFolderCard = (item) => {
+    const anchor = document.createElement('a');
+    anchor.className = `drive-folder-card${item.offline ? ' is-offline' : ''}`;
+    anchor.href = item.url;
+    anchor.dataset.offline = String(Boolean(item.offline));
+    const icon = document.createElement('span');
+    icon.className = 'drive-folder-card-icon';
+    icon.innerHTML = '<svg class="inline-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H10l2 2h6.5A2.5 2.5 0 0 1 21 8.5v9A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5z"></path></svg>';
+    const strong = document.createElement('strong');
+    strong.textContent = item.name;
+    anchor.append(icon, strong);
+    return anchor;
+  };
   const makeFileRow = (item) => {
     const anchor = document.createElement('a');
     anchor.className = `file-row${item.offline ? ' is-offline' : ''}${item.health === 'damaged' ? ' is-damaged' : ''}`;
     anchor.setAttribute('role', 'listitem');
-    anchor.href = item.is_dir ? item.url : item.download_url;
-    if (!item.is_dir && item.id) {
+    anchor.href = item.download_url;
+    if (item.id) {
       anchor.dataset.downloadFileId = item.id;
       anchor.dataset.selectableFile = item.id;
       anchor.dataset.offline = String(Boolean(item.offline));
+      anchor.dataset.starred = String(Boolean(item.starred));
     }
-    if (!item.is_dir && item.id) {
-      const check = document.createElement('span');
-      check.className = 'selection-check file-selection-check';
-      check.setAttribute('aria-hidden', 'true');
-      check.textContent = '✓';
-      anchor.append(check);
-    }
+    const check = document.createElement('span');
+    check.className = 'selection-check file-selection-check';
+    check.setAttribute('aria-hidden', 'true');
+    check.textContent = '✓';
+    anchor.append(check);
+
     const preview = document.createElement('span');
-    preview.className = `file-card-preview${item.is_dir ? ' folder-preview' : ''}`;
+    preview.className = 'file-card-preview';
     if (item.thumbnail_url) {
       const image = document.createElement('img');
       image.src = item.thumbnail_url;
@@ -1422,24 +1504,24 @@
     } else {
       const placeholder = document.createElement('span');
       placeholder.className = `drive-preview-placeholder drive-kind-${item.kind || 'file'}`;
-      placeholder.textContent = item.is_dir ? '■' : item.kind === 'image' ? '▧' : item.kind === 'video' ? '▶' : item.kind === 'audio' ? '♪' : '▤';
+      placeholder.append(makeFileTypeIcon(item));
       preview.append(placeholder);
     }
     const kind = document.createElement('span');
-    kind.className = `file-kind${item.is_dir ? ' folder' : ''}`;
-    kind.textContent = item.is_dir ? '▣' : item.kind === 'image' ? '▧' : item.kind === 'video' ? '▶' : item.kind === 'audio' ? '♪' : item.kind === 'document' ? '▤' : item.kind === 'archive' ? '▥' : '•';
+    kind.className = `file-kind drive-kind-${item.kind || 'file'}`;
+    kind.append(makeFileTypeIcon(item));
     const main = document.createElement('span');
     main.className = 'file-main';
     const strong = document.createElement('strong');
     strong.textContent = item.name;
     const small = document.createElement('small');
-    small.textContent = item.is_dir ? `Carpeta${item.offline ? ' · unidad desconectada' : ''}` : `${item.location ? `${item.location} · ` : ''}${formatTime(item.mod_time)}${item.offline ? ' · original no disponible hasta reconectar' : ''}`;
+    small.textContent = `${item.location ? `${item.location} · ` : ''}${formatTime(item.mod_time)}${item.offline ? ' · original no disponible hasta reconectar' : ''}`;
     main.append(strong, small);
     const size = document.createElement('span');
     size.className = 'file-size';
-    size.textContent = item.is_dir ? '—' : formatBytes(item.size);
+    size.textContent = formatBytes(item.size);
     anchor.append(preview, kind, main, size);
-    if (!item.is_dir && item.id) {
+    if (item.id) {
       const more = document.createElement('button');
       more.type = 'button';
       more.className = 'drive-more-button file-row-more';
@@ -1469,7 +1551,15 @@
       const response = await fetch(`/api/archivos/listado?${query}`, { headers: { Accept: 'application/json' }, cache: 'no-store' });
       if (!response.ok) return;
       const data = await response.json();
-      data.items.forEach((item) => fileList.append(makeFileRow(item)));
+      data.items.forEach((item) => {
+        if (item.is_dir && folderListing) {
+          folderListing.append(makeFolderCard(item));
+          if (folderSection) folderSection.hidden = false;
+        } else if (!item.is_dir) {
+          fileList.append(makeFileRow(item));
+          if (fileSection) fileSection.hidden = false;
+        }
+      });
       fileList.dataset.next = data.next;
       fileList.dataset.hasMore = String(data.has_more);
       if (fileSentinel && !data.has_more) fileSentinel.textContent = 'Fin de la carpeta';
@@ -1486,6 +1576,8 @@
   const selectionMenu = $('[data-selection-menu]');
   const bulkToolbar = $('[data-bulk-toolbar]');
   const selectionCount = $('[data-selection-count]');
+  const bulkStarButton = $('[data-bulk-star]');
+  const bulkStarLabel = $('[data-bulk-star-label]', bulkStarButton);
   const moveDialog = $('[data-move-dialog]');
   const moveForm = $('[data-move-form]', moveDialog);
   const moveRoot = $('[data-move-root]', moveForm);
@@ -1529,9 +1621,17 @@
   };
 
   const refreshSelectionUI = () => {
-    $$('[data-selectable-file]').forEach((element) => element.classList.toggle('is-selected', selectedIDs.has(element.dataset.selectableFile)));
+    const selectable = $$('[data-selectable-file]');
+    selectable.forEach((element) => element.classList.toggle('is-selected', selectedIDs.has(element.dataset.selectableFile)));
     if (selectionCount) selectionCount.textContent = String(selectedIDs.size);
     if (bulkToolbar) bulkToolbar.hidden = selectedIDs.size === 0;
+    if (bulkStarButton) {
+      const allStarred = selectedIDs.size > 0 && [...selectedIDs].every((id) => selectable.some((element) => element.dataset.selectableFile === id && element.dataset.starred === 'true'));
+      bulkStarButton.dataset.starred = String(allStarred);
+      bulkStarButton.classList.toggle('is-starred', allStarred);
+      bulkStarButton.title = allStarred ? 'Quitar de Destacados' : 'Agregar a Destacados';
+      if (bulkStarLabel) bulkStarLabel.textContent = allStarred ? 'Quitar de Destacados' : 'Agregar a Destacados';
+    }
   };
   const setSelectionMode = (enabled) => {
     document.body.classList.toggle('selection-mode', enabled);
@@ -1625,7 +1725,24 @@
     const anchor = document.createElement('a');
     anchor.href = data.url; anchor.hidden = true; document.body.append(anchor); anchor.click(); anchor.remove();
   };
-  $('[data-bulk-download]')?.addEventListener('click', async () => {
+  bulkStarButton?.addEventListener('click', async () => {
+    const ids = [...selectedIDs];
+    if (!ids.length) return;
+    const target = bulkStarButton.dataset.starred !== 'true';
+    bulkStarButton.disabled = true;
+    try {
+      const result = await postAction('/api/elementos/destacar', ids, { starred: String(target) });
+      ids.forEach((id) => updateStarStateForID(id, Boolean(result.starred)));
+      showToast(result.starred ? `${result.updated || ids.length} agregado(s) a Destacados` : `${result.updated || ids.length} quitado(s) de Destacados`);
+      refreshSelectionUI();
+      if (window.location.pathname === '/destacados' && !result.starred) window.setTimeout(() => window.location.reload(), 220);
+    } catch (error) {
+      window.alert(error.message);
+    } finally {
+      bulkStarButton.disabled = false;
+    }
+  });
+    $('[data-bulk-download]')?.addEventListener('click', async () => {
     try { await startBatchDownload([...selectedIDs]); } catch (error) { window.alert(error.message); }
   });
   const openMoveDialog = (ids) => {

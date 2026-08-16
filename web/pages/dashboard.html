@@ -41,11 +41,11 @@
       {{range .HomeFiles}}
       <article class="drive-home-file-card{{if .Offline}} is-offline{{end}}{{if eq .Health "damaged"}} is-damaged{{end}}" data-download-file-id="{{.ID}}" data-offline="{{.Offline}}">
         <div class="drive-home-file-head">
-          <span class="drive-kind-icon drive-kind-{{.Kind}}">{{if eq .Kind "image"}}{{template "icon-image" $}}{{else if eq .Kind "video"}}{{template "icon-video" $}}{{else if eq .Kind "audio"}}{{template "icon-audio" $}}{{else}}{{template "icon-files" $}}{{end}}</span>
+          <span class="drive-kind-icon drive-kind-{{.Kind}}">{{template "file-type-icon" .}}</span>
           <a class="drive-home-file-name" href="{{.OpenURL}}" title="{{.Name}}">{{.Name}}</a>
         </div>
         <a class="drive-home-file-preview" href="{{.OpenURL}}" aria-label="Abrir {{.Name}}">
-          {{if .ThumbnailURL}}<img src="{{.ThumbnailURL}}" alt="" loading="lazy">{{else}}<span class="drive-preview-placeholder drive-kind-{{.Kind}}">{{if eq .Kind "image"}}{{template "icon-image" $}}{{else if eq .Kind "video"}}{{template "icon-video" $}}{{else if eq .Kind "audio"}}{{template "icon-audio" $}}{{else}}{{template "icon-files" $}}{{end}}</span>{{end}}
+          {{if .ThumbnailURL}}<img src="{{.ThumbnailURL}}" alt="" loading="lazy">{{else}}<span class="drive-preview-placeholder drive-kind-{{.Kind}}">{{template "file-type-icon" .}}</span>{{end}}
         </a>
         <div class="drive-home-file-meta"><span class="drive-home-file-activity"><span class="drive-owner-avatar">yo</span><span>{{if .Offline}}Unidad no disponible{{else}}Lo modificaste · {{formatTime .ModTime}}{{end}}</span></span></div>
         <span class="drive-home-file-reason">{{if .Offline}}No disponible{{else}}Lo modificaste · {{formatTime .ModTime}}{{end}}</span>
