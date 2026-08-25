@@ -69,6 +69,9 @@ type publicShareView struct {
 }
 
 func (a *App) absoluteURL(r *http.Request, value string) string {
+	if a.cfg.AppURL != "" {
+		return strings.TrimRight(a.cfg.AppURL, "/") + "/" + strings.TrimLeft(value, "/")
+	}
 	scheme := "http"
 	if a.requestIsHTTPS(r) {
 		scheme = "https"

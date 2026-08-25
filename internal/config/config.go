@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,6 +14,7 @@ import (
 
 type Config struct {
 	Addr               string
+	AppURL             string
 	DataDir            string
 	MountRoot          string
 	CookieSecure       bool
@@ -29,6 +31,7 @@ type Config struct {
 func Load() (Config, error) {
 	cfg := Config{
 		Addr:               envOr("APP_ADDR", ":8080"),
+		AppURL:             "",
 		DataDir:            envOr("APP_DATA_DIR", "./data"),
 		SessionTTL:         7 * 24 * time.Hour,
 		CookieSecure:       false,
@@ -38,6 +41,15 @@ func Load() (Config, error) {
 		TLSCertFile:        strings.TrimSpace(os.Getenv("APP_TLS_CERT_FILE")),
 		TLSKeyFile:         strings.TrimSpace(os.Getenv("APP_TLS_KEY_FILE")),
 	}
+	if raw := strings.TrimSpace(os.Getenv("APP_URL")); raw != "" {
+		parsed, err := url.Parse(raw)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return Config{}, fmt.Errorf("APP_URL debe ser una URL absoluta http(s) sin credenciales, query ni fragmento")
+		}
+		parsed.Path = strings.TrimRight(parsed.Path, "/")
+		cfg.AppURL = strings.TrimRight(parsed.String(), "/")
+	}
+
 	if runtime.GOOS == "windows" {
 		cfg.MountRoot = ""
 	} else {

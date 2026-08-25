@@ -33,3 +33,27 @@ func TestLoadTLSRequiresCertificatePair(t *testing.T) {
 		t.Fatal("esperaba error al configurar solo el certificado")
 	}
 }
+
+func TestLoadAppURLNormalizesAndValidates(t *testing.T) {
+	t.Setenv("APP_DATA_DIR", t.TempDir())
+	t.Setenv("APP_URL", "https://ncloud.admvo.org/")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AppURL != "https://ncloud.admvo.org" {
+		t.Fatalf("APP_URL inesperada: %q", cfg.AppURL)
+	}
+}
+
+func TestLoadRejectsInvalidAppURL(t *testing.T) {
+	t.Setenv("APP_DATA_DIR", t.TempDir())
+	for _, value := range []string{"ncloud.admvo.org", "ftp://ncloud.admvo.org", "https://user:pass@ncloud.admvo.org", "https://ncloud.admvo.org/?x=1"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("APP_URL", value)
+			if _, err := Load(); err == nil {
+				t.Fatalf("APP_URL %q debía rechazarse", value)
+			}
+		})
+	}
+}
