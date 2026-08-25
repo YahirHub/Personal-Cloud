@@ -303,7 +303,8 @@ func TestGalleryTemplateIsOfflineAndHasMediaViewer(t *testing.T) {
 			t.Fatalf("galería no contiene %q", want)
 		}
 	}
-	if strings.Contains(html, "https://") || strings.Contains(html, "http://") {
+	galleryHTML := strings.ReplaceAll(html, `href="https://thotilabs.com"`, `href=""`)
+	if strings.Contains(galleryHTML, "https://") || strings.Contains(galleryHTML, "http://") {
 		t.Fatal("la galería no debe depender de assets remotos/CDN")
 	}
 }

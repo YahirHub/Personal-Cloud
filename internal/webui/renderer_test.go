@@ -115,8 +115,12 @@ func TestRenderPages(t *testing.T) {
 			if err := renderer.Render(&out, page, data); err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(out.String(), "<!doctype html>") {
+			html := out.String()
+			if !strings.Contains(html, "<!doctype html>") {
 				t.Fatal("salida HTML incompleta")
+			}
+			if !strings.Contains(html, "Powered by ThotiLabs.com") {
+				t.Fatal("el layout global debe incluir el footer de ThotiLabs")
 			}
 		})
 	}
