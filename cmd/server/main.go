@@ -23,6 +23,7 @@ func main() {
 	} else if relaunched {
 		return
 	}
+	config.LoadDotEnv("")
 	cfg, err := config.Load()
 	if err != nil {
 		logger.Error("configuración inválida", "error", err)
