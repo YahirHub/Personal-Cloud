@@ -195,6 +195,9 @@ func (a *App) loginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Authentication changes browser state. Prevent an intermediary from
+	// caching/replaying the redirect response that carries Set-Cookie.
+	w.Header().Set("Cache-Control", "no-store, private")
 	if err := a.createLoginSession(w, r, userID); err != nil {
 		a.logger.Error("no se pudo crear sesión", "error", err)
 		http.Error(w, "No se pudo completar el inicio de sesión.", http.StatusInternalServerError)

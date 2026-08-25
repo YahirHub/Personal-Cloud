@@ -82,6 +82,11 @@ func TestBootstrapFlow(t *testing.T) {
 		t.Fatal("setup correcto no creó sesión")
 	}
 
+	// The session cookie must be usable by a normal browser after the 303.
+	if session.Path != "/" || !session.HttpOnly || session.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("atributos de sesión inesperados: %+v", session)
+	}
+
 	filesReq := httptest.NewRequest(http.MethodGet, "/archivos", nil)
 	filesReq.AddCookie(session)
 	filesPage := httptest.NewRecorder()

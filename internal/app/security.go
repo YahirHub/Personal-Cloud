@@ -68,14 +68,18 @@ func (a *App) createLoginSession(w http.ResponseWriter, r *http.Request, userID 
 	if err := a.store.CreateSession(r.Context(), userID, digest, expires); err != nil {
 		return err
 	}
+	// The login response is a credential-setting response. Do not allow a
+	// browser or an intermediary to reuse/cache it, and derive Secure from
+	// the effective request scheme as well as the global HTTPS policy.
+	secure := a.cfg.CookieSecure || a.cfg.RequireHTTPS || a.requestIsHTTPS(r)
+	w.Header().Set("Cache-Control", "no-store, private")
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    plain,
 		Path:     "/",
-		Expires:  expires,
 		MaxAge:   int(a.cfg.SessionTTL.Seconds()),
 		HttpOnly: true,
-		Secure:   a.cfg.CookieSecure,
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
 	return nil
