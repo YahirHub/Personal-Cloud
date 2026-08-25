@@ -1,0 +1,9 @@
+{{define "content"}}
+<meta http-equiv="refresh" content="0;url={{.LoginRedirectURL}}">
+<section class="auth-card" aria-labelledby="login-success-title">
+  <div class="eyebrow">Acceso</div>
+  <h1 id="login-success-title">Sesión iniciada</h1>
+  <p class="muted">La sesión se estableció correctamente. Continuando…</p>
+  <p><a class="button button-primary full" href="{{.LoginRedirectURL}}">Continuar</a></p>
+</section>
+{{end}}

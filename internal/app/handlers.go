@@ -208,11 +208,25 @@ func (a *App) loginPost(w http.ResponseWriter, r *http.Request) {
 	a.limiter.Reset(userKey)
 	a.limiter.Reset(ipKey)
 	_ = a.store.Audit(r.Context(), userID, "login", "correcto", ip)
+	target := "/bienvenida"
 	if onboarding {
-		http.Redirect(w, r, "/inicio", http.StatusFound)
-	} else {
-		http.Redirect(w, r, "/bienvenida", http.StatusFound)
+		target = "/inicio"
 	}
+	// Algunos intermediarios/proxies pueden alterar respuestas 3xx que
+	// contienen Set-Cookie. Entregamos la cookie en una respuesta 200 y
+	// navegamos después hacia el destino. Esto mantiene la sesión fuera de
+	// la cabecera Location y hace el flujo robusto detrás de túneles HTTPS.
+	setAuthNoStore(w)
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+	w.Header().Set("X-PC-Login-Established", "1")
+	w.Header().Set("Refresh", "0; url="+target)
+	data = pageData{
+		Title:       "Sesión iniciada",
+		Description: "Sesión iniciada correctamente.",
+		CurrentPath: "/iniciar-sesion",
+	}
+	data.LoginRedirectURL = target
+	a.render(w, http.StatusOK, "login-success", data)
 }
 
 func (a *App) logoutPost(w http.ResponseWriter, r *http.Request) {

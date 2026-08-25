@@ -28,3 +28,15 @@ APP_TRUSTED_PROXIES=127.0.0.1/32,::1/128
 ```
 
 El servidor fuerza internamente `CookieSecure=true` porque HTTPS es obligatorio.
+
+## Ajuste posterior — sesión en respuesta 200
+
+- Evitar depender de `Set-Cookie` dentro de la redirección 3xx del login.
+- Entregar la sesión en una respuesta `200 OK` y navegar después mediante `Refresh`/enlace.
+- Añadir regresión que comprueba `pc_session`, `Secure`, `HttpOnly` y `Refresh`.
+- Añadir `X-PC-Login-Established=1` para diagnóstico sin exponer credenciales.
+
+Verificación adicional:
+
+- `go test ./...` ✅
+- `go vet ./...` ✅

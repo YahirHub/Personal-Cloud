@@ -56,3 +56,11 @@ navegador HTTPS
 ```
 
 La sesión sigue almacenando únicamente el hash SHA-256 del token y no se modifica el modelo de autenticación.
+
+# Ajuste posterior — cookie emitida en respuesta 200
+
+Los intentos con 303 y 302 seguían llegando a `/bienvenida` sin `pc_session`, mientras `pc_csrf` sí permanecía en el navegador. La regresión de backend demostraba que `pc_session` se generaba correctamente, por lo que se aisló el problema en el transporte de la respuesta de login mediante el intermediario.
+
+El login exitoso ya no depende de transportar `Set-Cookie` dentro de una respuesta 3xx. Después de crear la sesión, responde `200 OK`, conserva `Set-Cookie: pc_session` y envía `Refresh: 0; url=...` más un enlace manual de respaldo. La respuesta lleva `Cache-Control: no-store` y `X-PC-Login-Established: 1` para facilitar la verificación del túnel sin revelar el token.
+
+La cookie mantiene `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/` y `Max-Age` según `APP_SESSION_TTL`.

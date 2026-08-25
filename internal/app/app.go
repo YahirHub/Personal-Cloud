@@ -58,6 +58,7 @@ type pageData struct {
 	Title                  string
 	Description            string
 	CurrentPath            string
+	LoginRedirectURL       string
 	CSRFToken              string
 	Error                  string
 	Info                   string
