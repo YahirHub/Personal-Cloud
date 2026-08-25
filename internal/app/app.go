@@ -468,6 +468,9 @@ func (a *App) clientIP(r *http.Request) string {
 }
 
 func (a *App) isTrustedProxy(ip net.IP) bool {
+	if a.cfg.TrustAllProxies {
+		return true
+	}
 	for _, network := range a.cfg.TrustedProxyNets {
 		if network.Contains(ip) {
 			return true

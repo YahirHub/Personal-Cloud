@@ -18,6 +18,7 @@ type Config struct {
 	CookieSecure       bool
 	RequireHTTPS       bool
 	WebDAVRequireHTTPS bool
+	TrustAllProxies    bool
 	TrustedProxyNets   []*net.IPNet
 	SessionTTL         time.Duration
 	MaxUploadBytes     int64
@@ -90,11 +91,16 @@ func Load() (Config, error) {
 	if cfg.RequireHTTPS || cfg.TLSCertFile != "" {
 		cfg.CookieSecure = true
 	}
-	trusted, err := parseCIDRs(envOr("APP_TRUSTED_PROXIES", "127.0.0.1/32,::1/128"))
-	if err != nil {
-		return Config{}, fmt.Errorf("APP_TRUSTED_PROXIES: %w", err)
+	trustedRaw := envOr("APP_TRUSTED_PROXIES", "127.0.0.1/32,::1/128")
+	if strings.TrimSpace(trustedRaw) == "*" {
+		cfg.TrustAllProxies = true
+	} else {
+		trusted, err := parseCIDRs(trustedRaw)
+		if err != nil {
+			return Config{}, fmt.Errorf("APP_TRUSTED_PROXIES: %w", err)
+		}
+		cfg.TrustedProxyNets = trusted
 	}
-	cfg.TrustedProxyNets = trusted
 
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 		return Config{}, fmt.Errorf("crear data dir: %w", err)
