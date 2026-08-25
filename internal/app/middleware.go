@@ -48,6 +48,7 @@ func (a *App) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user, err := a.currentUser(r)
 		if err != nil || user == nil {
+			a.logger.Warn("autenticación requerida sin sesión válida", "path", r.URL.Path, "cookie_present", hasSessionCookie(r), "cookie_len", sessionCookieLength(r), "lookup_error", err)
 			http.Redirect(w, r, "/iniciar-sesion", http.StatusSeeOther)
 			return
 		}
@@ -66,6 +67,19 @@ func (a *App) currentUser(r *http.Request) (*store.User, error) {
 		return nil, err
 	}
 	return &user, nil
+}
+
+func hasSessionCookie(r *http.Request) bool {
+	_, err := r.Cookie(sessionCookieName)
+	return err == nil
+}
+
+func sessionCookieLength(r *http.Request) int {
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		return 0
+	}
+	return len(cookie.Value)
 }
 
 func (a *App) enforceHTTPS(next http.Handler) http.Handler {
