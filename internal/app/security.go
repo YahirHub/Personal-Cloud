@@ -59,6 +59,13 @@ func (a *App) validCSRFValue(r *http.Request, token string) bool {
 	return subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(token)) == 1
 }
 
+func setAuthNoStore(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, private")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+	w.Header().Add("Vary", "Cookie")
+}
+
 func (a *App) createLoginSession(w http.ResponseWriter, r *http.Request, userID string) error {
 	plain, digest, err := auth.NewSessionToken()
 	if err != nil {
@@ -72,7 +79,8 @@ func (a *App) createLoginSession(w http.ResponseWriter, r *http.Request, userID 
 	// browser or an intermediary to reuse/cache it, and derive Secure from
 	// the effective request scheme as well as the global HTTPS policy.
 	secure := a.cfg.CookieSecure || a.cfg.RequireHTTPS || a.requestIsHTTPS(r)
-	w.Header().Set("Cache-Control", "no-store, private")
+	setAuthNoStore(w)
+	w.Header().Set("X-PC-Session-Created", "1")
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    plain,

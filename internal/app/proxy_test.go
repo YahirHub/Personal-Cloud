@@ -117,8 +117,14 @@ func TestLoginBehindTrustedHTTPSProxyKeepsSession(t *testing.T) {
 	postReq.Header.Set("X-Forwarded-Proto", "https")
 	postReq.AddCookie(csrf)
 	application.Handler().ServeHTTP(post, postReq)
-	if post.Code != http.StatusSeeOther || post.Header().Get("Location") != "/inicio" {
+	if post.Code != http.StatusFound || post.Header().Get("Location") != "/inicio" {
 		t.Fatalf("login detrás de proxy: status=%d location=%q body=%s", post.Code, post.Header().Get("Location"), post.Body.String())
+	}
+	if post.Header().Get("Cache-Control") != "no-store, no-cache, must-revalidate, private" {
+		t.Fatalf("login debe impedir cache: Cache-Control=%q", post.Header().Get("Cache-Control"))
+	}
+	if post.Header().Get("X-PC-Session-Created") != "1" {
+		t.Fatalf("login debe indicar que la sesión fue emitida")
 	}
 	if session := findCookie(post.Result().Cookies(), sessionCookieName); session == nil || !session.Secure {
 		t.Fatalf("login no emitió una cookie Secure de sesión")

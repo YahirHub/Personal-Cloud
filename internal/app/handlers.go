@@ -124,6 +124,7 @@ func (a *App) setupPost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) loginGet(w http.ResponseWriter, r *http.Request) {
+	setAuthNoStore(w)
 	exists, err := a.store.AdminExists(r.Context())
 	if err != nil {
 		http.Error(w, "No se pudo comprobar la configuración.", http.StatusInternalServerError)
@@ -146,6 +147,7 @@ func (a *App) loginGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) loginPost(w http.ResponseWriter, r *http.Request) {
+	setAuthNoStore(w)
 	if !a.parseProtectedForm(w, r) {
 		return
 	}
@@ -197,7 +199,7 @@ func (a *App) loginPost(w http.ResponseWriter, r *http.Request) {
 
 	// Authentication changes browser state. Prevent an intermediary from
 	// caching/replaying the redirect response that carries Set-Cookie.
-	w.Header().Set("Cache-Control", "no-store, private")
+	setAuthNoStore(w)
 	if err := a.createLoginSession(w, r, userID); err != nil {
 		a.logger.Error("no se pudo crear sesión", "error", err)
 		http.Error(w, "No se pudo completar el inicio de sesión.", http.StatusInternalServerError)
@@ -207,13 +209,14 @@ func (a *App) loginPost(w http.ResponseWriter, r *http.Request) {
 	a.limiter.Reset(ipKey)
 	_ = a.store.Audit(r.Context(), userID, "login", "correcto", ip)
 	if onboarding {
-		http.Redirect(w, r, "/inicio", http.StatusSeeOther)
+		http.Redirect(w, r, "/inicio", http.StatusFound)
 	} else {
-		http.Redirect(w, r, "/bienvenida", http.StatusSeeOther)
+		http.Redirect(w, r, "/bienvenida", http.StatusFound)
 	}
 }
 
 func (a *App) logoutPost(w http.ResponseWriter, r *http.Request) {
+	setAuthNoStore(w)
 	if !a.parseProtectedForm(w, r) {
 		return
 	}
@@ -226,6 +229,7 @@ func (a *App) logoutPost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) onboardingGet(w http.ResponseWriter, r *http.Request) {
+	setAuthNoStore(w)
 	user := userFromContext(r.Context())
 	if user.OnboardingCompleted {
 		http.Redirect(w, r, "/inicio", http.StatusSeeOther)
