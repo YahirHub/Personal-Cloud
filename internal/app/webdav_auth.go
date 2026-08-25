@@ -158,21 +158,6 @@ func retryHeader(wait time.Duration) string {
 	return strconv.Itoa(seconds)
 }
 
-func (a *App) requestIsHTTPS(r *http.Request) bool {
-	if r.TLS != nil {
-		return true
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	remote := net.ParseIP(strings.TrimSpace(host))
-	if remote == nil || !a.isTrustedProxy(remote) {
-		return false
-	}
-	return strings.EqualFold(strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0]), "https")
-}
-
 func isLoopbackIP(value string) bool {
 	ip := net.ParseIP(value)
 	return ip != nil && ip.IsLoopback()

@@ -40,7 +40,7 @@ func (a *App) requestLog(next http.Handler) http.Handler {
 				logPath += "/" + parts[1]
 			}
 		}
-		a.logger.Info("http", "method", r.Method, "path", logPath, "ip", a.clientIP(r), "elapsed_ms", time.Since(start).Milliseconds())
+		a.logger.Info("http", "method", r.Method, "path", logPath, "ip", a.clientIP(r), "https", a.requestIsHTTPS(r), "remote_addr", r.RemoteAddr, "x_forwarded_proto", r.Header.Get("X-Forwarded-Proto"), "elapsed_ms", time.Since(start).Milliseconds())
 	})
 }
 
